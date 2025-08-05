@@ -101,12 +101,7 @@ GATILHOS_LINGUAGEM_OUSADA = [
 ]
 
 def analisar_intensidade(mensagem):
-    """Verifica se a mensagem contém palavras de linguagem ousada"""
-    gatilhos = [
-        "foda", "tesão", "gostoso", "molhad", "duro", "quero",
-        "delícia", "safado", "puta", "chupar", "comer", "gozar"
-    ]
-    return any(palavra in mensagem.lower() for palavra in gatilhos)
+    return any(palavra in mensagem.lower() for palavra in GATILHOS_LINGUAGEM_OUSADA)
 
 
 # Funções auxiliares

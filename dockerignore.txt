@@ -1,0 +1,6 @@
+# Conteúdo do .dockerignore
+.git
+__pycache__
+*.pyc
+*.db
+*.csv

@@ -100,6 +100,15 @@ GATILHOS_LINGUAGEM_OUSADA = [
     "delícia", "safado", "puta", "chupar", "comer", "gozar"
 ]
 
+def analisar_intensidade(mensagem):
+    """Verifica se a mensagem contém palavras de linguagem ousada"""
+    gatilhos = [
+        "foda", "tesão", "gostoso", "molhad", "duro", "quero",
+        "delícia", "safado", "puta", "chupar", "comer", "gozar"
+    ]
+    return any(palavra in mensagem.lower() for palavra in gatilhos)
+
+
 # Funções auxiliares
 def processar_links_para_botoes(texto):
     if not isinstance(texto, str):

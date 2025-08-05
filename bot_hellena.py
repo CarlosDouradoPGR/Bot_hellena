@@ -602,8 +602,8 @@ def update_intimacy(user_id):
     conn.close()
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_API_KEY = "sk-c571b0da46354f23a8fee71066ad8ef4"
-TOKEN_TELEGRAM= '8048289150:AAFsNzZmsoGoj8xOC5BuWOfdxaA68xk_PS8'
+DEEPSEEK_API_KEY = os.environ['DEEPSEEK_API_KEY']
+TOKEN_TELEGRAM= os.environ['TELEGRAM_TOKEN']
 
 DELAY_ENTRE_FRASES = 2.2
 DELAY_ENTRE_MENSAGENS = 1.5
@@ -900,6 +900,7 @@ async def main():
     application = ApplicationBuilder().token(TOKEN_TELEGRAM).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
     await application.run_polling()
 
 print(f"⚠️ CAMINHO DO BANCO: {os.path.abspath('hellena_bot.db')}")

@@ -10,7 +10,7 @@ import re
 import psycopg2
 import os
 import asyncio
-import randon
+import random
 
 # Configuração inicial
 nest_asyncio.apply()

@@ -91,35 +91,77 @@ def get_user_history(user_id, limit=6):
         return []
 
 
-#NOVA FUNÇÃO TESTE 0
+
 
 def deve_enviar_imagem(mensagem):
     """Verifica se a mensagem contém palavras-chave para enviar imagem"""
     mensagem = mensagem.lower()
     return any(palavra in mensagem for palavra in PALAVRAS_CHAVE_IMAGENS)
+    
+##### MUDANÇAS NO ENVIO DE MIDIA
 
+# Adicione esta função auxiliar para verificar se já enviou foto
+def user_received_photo(user_id):
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute('''SELECT media_sent FROM messages 
+                    WHERE user_id = %s AND media_sent = TRUE
+                    LIMIT 1''', (user_id,))
+        result = c.fetchone()
+        conn.close()
+        return result is not None
+    except Exception as e:
+        print(f"Erro ao verificar foto enviada: {e}")
+        return False
+
+# Modifique a função responder_pedido_foto
 async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
+    
+    # Verifica se já recebeu foto antes
+    if user_received_photo(user.id):
+        mensagens = [
+            "Adoraria te mostrar mais, mas isso é só para os meus especiais... 😈",
+            "Quer ver tudo mesmo? É só no meu conteúdo exclusivo... 🔥",
+            "Isso aí é só prévia amor... o melhor tá no meu link 😘",
+            "Safado... quer mais? Vem ver tudo que eu tenho... 💋"
+        ]
+        texto = f"{random.choice(mensagens)}\n\n👉 https://bit.ly/4mmlt3G"
+        
+        await update.message.reply_text(
+            text=texto,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔥 Ver Conteúdo Completo", url="https://bit.ly/4mmlt3G")]
+            ])
+        )
+        return
 
     try:
-        # 1. Envia a imagem primeiro
+        # Envia a primeira foto
         imagem_url = random.choice(IMAGENS_HELLENA)
-        LEGENDA_FOTOS=[
-            "Um pouco de mim... ", 
-            "Acha que você aguentava quanto tempo comigo?", 
-            "O que acha?", 
-            "Gostou?"
+        LEGENDA_FOTOS = [
+            "Um pouco de mim... mas tem muito mais no meu conteúdo especial 😈", 
+            "Gostou? Isso é só uma amostra... quer ver o resto? 🔥",
+            "Prévia especial pra você... o melhor tá no link 😘",
+            "Só um gostinho... quer ver tudo? 💋"
         ]
+        
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
-            caption=random.choice(LEGENDA_FOTOS))
+            caption=f"{random.choice(LEGENDA_FOTOS)}\n\n👉 https://bit.ly/4mmlt3G",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("😈 Ver Mais", url="https://bit.ly/4mmlt3G")]
+            ])
+        )
         
         # Registra no banco de dados
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"Imagem enviada + mensagem de upsell",
+            content="Imagem enviada + mensagem de upsell",
             media_url=imagem_url
         )
 

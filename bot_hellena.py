@@ -24,8 +24,6 @@ PALAVRAS_CHAVE_IMAGENS = [
 
 # Configuração de imagens (substitua pelas suas URLs)
 IMAGENS_HELLENA = [
-    "https://i.imgur.com/NvLa1mS.jpeg",
-    "https://i.imgur.com/dqV17wo.jpeg"
     "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto1.jpeg",
     "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto2.jpeg",
     "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto3.jpeg"

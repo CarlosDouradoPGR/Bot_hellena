@@ -146,7 +146,13 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
-            caption="*Um pouco de mim...* 😘"
+            legenda=[
+                    "Um pouco de mim... ", 
+                     "Acha que você aguentava quanto tempo comigo?", 
+                     "O que acha?", 
+                     "Gostou?"
+            ]
+            caption=legenda
         )
         
         # 2. Envia a mensagem com o link (2 segundos depois)
@@ -317,7 +323,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     
 #MUDANÇA NO CÓDIGO 0
-    if any(palavra in user_message for palavra in ["foto", "fotinha", "ver vc", "te ver", "imagem"]):
+    if any(palavra in user_message for palavra in PALAVRAS_CHAVE_IMAGENS):
         await responder_pedido_foto(update, context)  # Note o context agora!
         return
 #MUDANÇA NO CÓDIGO 0

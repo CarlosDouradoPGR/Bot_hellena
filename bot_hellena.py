@@ -48,45 +48,45 @@ GATILHOS_LINGUAGEM_OUSADA = [
 
 # Inicialização do banco de dados PostgreSQL
 def init_db():
-try:
-conn = psycopg2.connect(os.environ['DATABASE_URL'])
-c = conn.cursor()
+    try:
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    c = conn.cursor()
+    
+    # Remove as tabelas existentes (CUIDADO: Isso apagará todos os dados!)
+    c.execute('DROP TABLE IF EXISTS messages')
+    c.execute('DROP TABLE IF EXISTS users')
+    
+    # Recria as tabelas com a nova estrutura
+    c.execute('''
+               CREATE TABLE users (
+                   user_id BIGINT PRIMARY KEY,
+                   first_name TEXT,
+                   username TEXT,
+                   last_interaction TEXT,
+                   intimacy_level INTEGER DEFAULT 1
+               )
+           ''')
+    
+    c.execute('''
+               CREATE TABLE messages (
+                   id SERIAL PRIMARY KEY,
+                   user_id BIGINT REFERENCES users(user_id),
+                   username TEXT,
+                   timestamp TEXT,
+                   role TEXT,
+                   content TEXT,
+                   media_sent BOOLEAN DEFAULT FALSE,
+                   media_url TEXT
+               )
+           ''')
+    conn.commit()
+    conn.close()
+    print("Banco de dados reinicializado com sucesso!")
+    except Exception as e:
+    print(f"Erro ao reinicializar o banco de dados: {e}")
+    raise
 
-# Remove as tabelas existentes (CUIDADO: Isso apagará todos os dados!)
-c.execute('DROP TABLE IF EXISTS messages')
-c.execute('DROP TABLE IF EXISTS users')
-
-# Recria as tabelas com a nova estrutura
-c.execute('''
-           CREATE TABLE users (
-               user_id BIGINT PRIMARY KEY,
-               first_name TEXT,
-               username TEXT,
-               last_interaction TEXT,
-               intimacy_level INTEGER DEFAULT 1
-           )
-       ''')
-
-c.execute('''
-           CREATE TABLE messages (
-               id SERIAL PRIMARY KEY,
-               user_id BIGINT REFERENCES users(user_id),
-               username TEXT,
-               timestamp TEXT,
-               role TEXT,
-               content TEXT,
-               media_sent BOOLEAN DEFAULT FALSE,
-               media_url TEXT
-           )
-       ''')
-conn.commit()
-conn.close()
-print("Banco de dados reinicializado com sucesso!")
-except Exception as e:
-print(f"Erro ao reinicializar o banco de dados: {e}")
-raise
-
-init_db()
+#init_db()
 
 # Funções do banco de dados
 def save_message(user_id, role, content, first_name=None, username=None, media_url=None):

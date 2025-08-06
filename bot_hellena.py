@@ -172,6 +172,24 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 
 #NOVA FUNÇÃO TESTE 0 FIM
 
+#NOVA FUNÇÃO TESTE 1 
+def verificar_envio_imagem(user_id):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("SELECT enviou_imagem FROM usuarios WHERE user_id = %s", (user_id,))
+    resultado = cursor.fetchone()
+    conn.close()
+    return resultado[0] if resultado else False
+
+
+def marcar_envio_imagem(user_id):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE usuarios SET enviou_imagem = TRUE WHERE user_id = %s", (user_id,))
+    conn.commit()
+    conn.close()
+
+#NOVA FUNÇÃO TESTE 1 FIM
 
 def update_intimacy(user_id):
     try:

@@ -142,54 +142,51 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
     user = update.message.from_user
     
     try:
-        # 1. Envia a imagem primeiro
+        # 1. Verifica se o usuário já recebeu imagem
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute('SELECT imagem_enviada FROM users WHERE user_id = %s', (user.id,))
+        resultado = c.fetchone()
+        conn.close()
+
+        if resultado and resultado[0] is True:
+            return  # já enviou imagem, não envia de novo
+
+        # 2. Envia a imagem
         imagem_url = random.choice(IMAGENS_HELLENA)
-        LEGENDA_FOTOS=[
-                    "Um pouco de mim... ", 
-                     "Acha que você aguentava quanto tempo comigo?", 
-                     "O que acha?", 
-                     "Gostou?"
-            ]
+        LEGENDA_FOTOS = [
+            "Um pouco de mim...", 
+            "Acha que você aguentava quanto tempo comigo?", 
+            "O que acha?", 
+            "Gostou?"
+        ]
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
             caption=random.choice(LEGENDA_FOTOS)
         )
-        
-        
-        # Registra no banco de dados
+
+        # 3. Salva a mensagem e marca como "imagem enviada"
         save_message(
             user_id=user.id,
             role="assistant",
             content=f"Imagem enviada + mensagem de upsell",
             media_url=imagem_url
         )
+
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute("UPDATE users SET imagem_enviada = TRUE WHERE user_id = %s", (user.id,))
+        conn.commit()
+        conn.close()
         
     except Exception as e:
         print(f"Erro ao enviar foto: {e}")
         await update.message.reply_text("*Oi amor, meu álbum travou... tenta de novo?* 😢")
 
-
 #NOVA FUNÇÃO TESTE 0 FIM
 
-#NOVA FUNÇÃO TESTE 1 
-def verificar_envio_imagem(user_id):
-    conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("SELECT enviou_imagem FROM usuarios WHERE user_id = %s", (user_id,))
-    resultado = cursor.fetchone()
-    conn.close()
-    return resultado[0] if resultado else False
 
-
-def marcar_envio_imagem(user_id):
-    conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE usuarios SET enviou_imagem = TRUE WHERE user_id = %s", (user_id,))
-    conn.commit()
-    conn.close()
-
-#NOVA FUNÇÃO TESTE 1 FIM
 
 def update_intimacy(user_id):
     try:

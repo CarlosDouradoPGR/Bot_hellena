@@ -203,14 +203,14 @@ def processar_links_para_botoes(texto):
     texto_sem_links = re.sub(r'https?://[^\s)\]]+', '', texto).strip()
     ultima_palavra = texto_sem_links.split()[-1].lower() if texto_sem_links.split() else ""
 
-    if any(palavra in ultima_palavra for palavra in ["😘", "😏", "🔥", "💋"]):
+    if any(palavra in ultima_palavra for palavra in ["😈","😘", "😏", "🔥", "💋"]):
         texto_botao = "🔥 Aqui você me conhece melhor"
     elif "conteúdo" in texto_sem_links.lower():
         texto_botao = "🌟 Acessar Conteúdo"
     elif "especial" in texto_sem_links.lower():
         texto_botao = "🔓 Conteúdo Exclusivo"
     else:
-        texto_botao = "💋 Vem me ver"
+        texto_botao = "💋 Vem me ver peladinha"
 
     botoes = [[InlineKeyboardButton(texto_botao, url=links[0])]]
     return texto_sem_links, InlineKeyboardMarkup(botoes)

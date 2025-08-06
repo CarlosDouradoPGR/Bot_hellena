@@ -427,7 +427,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
     
-    print(f"\n[USER] {user.first_name}: {user_message}")
+ 
 
     
     # Lógica de fotos (1° pedido vs. pedidos seguintes)
@@ -437,7 +437,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await responder_pedido_foto(update, context)
             return
-
+    print(f"\n[USER] {user.first_name}: {user_message}")
     try:
         print(f"[BOT] Hellena: {texto_msg[:100]}...")
         if not user_message or not user_message.strip():

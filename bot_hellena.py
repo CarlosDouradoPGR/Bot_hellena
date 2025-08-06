@@ -143,7 +143,7 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         # 1. Envia a imagem primeiro
         imagem_url = random.choice(IMAGENS_HELLENA)
-        legenda=[
+        LEGENDA_FOTOS=[
                     "Um pouco de mim... ", 
                      "Acha que você aguentava quanto tempo comigo?", 
                      "O que acha?", 
@@ -152,7 +152,7 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
-            caption=legenda
+            caption=random.choice(LEGENDA_FOTOS)
         )
         
         # 2. Envia a mensagem com o link (2 segundos depois)

@@ -14,6 +14,19 @@ import asyncio
 # Configuração inicial
 nest_asyncio.apply()
 
+# Palavras-chave que ativam o envio de imagens
+PALAVRAS_CHAVE_IMAGENS = [
+    "foto", "fotinha", "foto sua", "seu corpo", 
+    "quero ver", "mostra mais", "mostra você",
+    "imagem", "foto tua", "você nua"
+]
+
+# Configuração de imagens (substitua pelas suas URLs)
+IMAGENS_HELLENA = [
+    #"https://imgur.com/u8TSdFO",
+    "https://i.imgur.com/NvLa1mS.jpeg"
+]
+
 # Variáveis de ambiente - OBRIGATÓRIAS no Railway
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
@@ -35,8 +48,13 @@ def init_db():
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
         
+        # Remove as tabelas existentes (CUIDADO: Isso apagará todos os dados!)
+        c.execute('DROP TABLE IF EXISTS messages')
+        c.execute('DROP TABLE IF EXISTS users')
+        
+        # Recria as tabelas com a nova estrutura
         c.execute('''
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE users (
                 user_id BIGINT PRIMARY KEY,
                 first_name TEXT,
                 username TEXT,
@@ -46,31 +64,33 @@ def init_db():
         ''')
         
         c.execute('''
-            CREATE TABLE IF NOT EXISTS messages (
+            CREATE TABLE messages (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT REFERENCES users(user_id),
                 username TEXT,
                 timestamp TEXT,
                 role TEXT,
-                content TEXT
+                content TEXT,
+                media_sent BOOLEAN DEFAULT FALSE,
+                media_url TEXT
             )
         ''')
         conn.commit()
         conn.close()
-        print("Banco de dados inicializado com sucesso!")
+        print("Banco de dados reinicializado com sucesso!")
     except Exception as e:
-        print(f"Erro ao inicializar o banco de dados: {e}")
+        print(f"Erro ao reinicializar o banco de dados: {e}")
         raise
 
 init_db()
 
 # Funções do banco de dados
-def save_message(user_id, role, content, first_name=None, username=None):
+def save_message(user_id, role, content, first_name=None, username=None, media_url=None):
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
         
-        # Atualiza ou insere usuário
+        # Atualiza/insere usuário
         c.execute('''
             INSERT INTO users (user_id, first_name, username, last_interaction)
             VALUES (%s, %s, %s, %s)
@@ -80,18 +100,15 @@ def save_message(user_id, role, content, first_name=None, username=None):
                 last_interaction = EXCLUDED.last_interaction
         ''', (user_id, first_name, username, datetime.now().isoformat()))
         
-        # Insere a mensagem
+        # Insere mensagem com suporte a mídia
+        media_sent = media_url is not None
         c.execute('''
-            INSERT INTO messages (user_id, username, timestamp, role, content)
-            VALUES (%s, %s, %s, %s, %s)
-        ''', (user_id, username, datetime.now().isoformat(), role, content))
+            INSERT INTO messages (user_id, username, timestamp, role, content, media_sent, media_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (user_id, username, datetime.now().isoformat(), role, content, media_sent, media_url))
         
         conn.commit()
         conn.close()
-        
-        # Log opcional (pode ser removido em produção)
-        print(f"Mensagem salva: {user_id} - {role} - {content[:50]}...")
-        
     except Exception as e:
         print(f"Erro ao salvar mensagem: {e}")
 
@@ -110,6 +127,48 @@ def get_user_history(user_id, limit=6):
     except Exception as e:
         print(f"Erro ao obter histórico: {e}")
         return []
+
+
+#NOVA FUNÇÃO TESTE 0
+def deve_enviar_imagem(mensagem):
+    """Verifica se a mensagem contém palavras-chave para enviar imagem"""
+    mensagem = mensagem.lower()
+    return any(palavra in mensagem for palavra in PALAVRAS_CHAVE_IMAGENS)
+    
+async def enviar_imagem_aleatoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Envia uma imagem aleatória da lista"""
+    user = update.message.from_user
+    try:
+        if not IMAGENS_HELLENA:
+            await update.message.reply_text("*Estou sem fotos no momento...* 😢")
+            return
+        
+        imagem_url = random.choice(IMAGENS_HELLENA)
+        caption = "*Aqui está algo especial para você...* 😘"
+        
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=imagem_url,
+            caption=caption,
+            parse_mode='Markdown'
+        )
+        
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=caption,
+            first_name=user.first_name,
+            username=user.username,
+            media_url=imagem_url
+        )
+    
+    except Exception as e:
+        print(f"Erro ao enviar imagem: {e}")
+        await update.message.reply_text("*Não consegui enviar a foto agora...* 😔")
+
+
+#NOVA FUNÇÃO TESTE 0 FIM
+
 
 def update_intimacy(user_id):
     try:

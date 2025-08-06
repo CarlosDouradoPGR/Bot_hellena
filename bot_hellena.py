@@ -155,20 +155,6 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
             caption=random.choice(LEGENDA_FOTOS)
         )
         
-        # 2. Envia a mensagem com o link (2 segundos depois)
-        await asyncio.sleep(3)
-        mensagens_pos_imagem = [
-            "Quer ver mais? Minhas fotos mais ousadas estão aqui... 😈",
-            "Gostou? Tenho muito mais no meu lugar especial... 🔥",
-            "Isso é só um aperitivo... quer o prato principal? 😏"
-        ]
-        
-        await update.message.reply_text(
-            random.choice(mensagens_pos_imagem),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔓 Conteúdo Completo", url="https://seulink.com")]
-            ])
-        )
         
         # Registra no banco de dados
         save_message(

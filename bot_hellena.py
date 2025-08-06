@@ -19,12 +19,12 @@ nest_asyncio.apply()
 PALAVRAS_CHAVE_IMAGENS = [
     "foto", "fotinha", "foto sua", "seu corpo", 
     "quero ver", "mostra mais", "mostra você",
-    "imagem", "foto tua", "você nua"
+    "imagem", "foto tua", "você nua", "prévia", "previa"
 ]
 
 # Configuração de imagens (substitua pelas suas URLs)
 IMAGENS_HELLENA = [
-    #"https://imgur.com/u8TSdFO",
+    "https://i.imgur.com/9ERRpS8.jpeg",
     "https://i.imgur.com/NvLa1mS.jpeg"
 ]
 
@@ -150,7 +150,7 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         )
         
         # 2. Envia a mensagem com o link (2 segundos depois)
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
         mensagens_pos_imagem = [
             "Quer ver mais? Minhas fotos mais ousadas estão aqui... 😈",
             "Gostou? Tenho muito mais no meu lugar especial... 🔥",

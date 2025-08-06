@@ -115,7 +115,7 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
-            caption=random.choice(LEGENDA_FOTOS)
+            caption=random.choice(LEGENDA_FOTOS))
         
         # Registra no banco de dados
         save_message(

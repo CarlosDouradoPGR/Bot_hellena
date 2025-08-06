@@ -91,126 +91,6 @@ def get_user_history(user_id, limit=6):
         return []
 
 
-
-
-def deve_enviar_imagem(mensagem):
-    """Verifica se a mensagem contém palavras-chave para enviar imagem"""
-    mensagem = mensagem.lower()
-    return any(palavra in mensagem for palavra in PALAVRAS_CHAVE_IMAGENS)
-    
-##### MUDANÇAS NO ENVIO DE MIDIA
-
-# Adicione esta função auxiliar para verificar se já enviou foto
-def user_received_photo(user_id):
-    try:
-        conn = psycopg2.connect(os.environ['DATABASE_URL'])
-        c = conn.cursor()
-        c.execute('''SELECT media_sent FROM messages 
-                    WHERE user_id = %s AND media_sent = TRUE
-                    LIMIT 1''', (user_id,))
-        result = c.fetchone()
-        conn.close()
-        return result is not None
-    except Exception as e:
-        print(f"Erro ao verificar foto enviada: {e}")
-        return False
-
-# Modifique a função responder_pedido_foto
-# -*- coding: utf-8 -*-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-import csv
-from datetime import datetime
-import time
-import nest_asyncio
-import requests
-import re
-import psycopg2
-import os
-import asyncio
-import random
-
-# Configuração inicial
-nest_asyncio.apply()
-
-# Palavras-chave que ativam o envio de imagens
-PALAVRAS_CHAVE_IMAGENS = [
-    "foto", "fotinha", "foto sua", "seu corpo", 
-    "quero ver", "mostra mais", "mostra você",
-    "imagem", "foto tua", "você nua", "prévia", "previa"
-]
-
-# Configuração de imagens (substitua pelas suas URLs)
-IMAGENS_HELLENA = [
-    "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto1.jpeg",
-    "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto2.jpeg",
-    "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto3.jpeg"
-]
-
-# Variáveis de ambiente - OBRIGATÓRIAS no Railway
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
-TOKEN_TELEGRAM = os.environ.get('TELEGRAM_TOKEN')
-
-# Configurações do bot
-DELAY_ENTRE_FRASES = 2.2
-DELAY_ENTRE_MENSAGENS = 1.5
-
-# Gatilhos de linguagem ousada
-GATILHOS_LINGUAGEM_OUSADA = [
-    "foda", "tesão", "gostoso", "molhad", "duro", "quero",
-    "delícia", "safado", "puta", "chupar", "comer", "gozar"
-]
-
-# Inicialização do banco de dados PostgreSQL
-
-# Funções do banco de dados
-def save_message(user_id, role, content, first_name=None, username=None, media_url=None):
-    try:
-        conn = psycopg2.connect(os.environ['DATABASE_URL'])
-        c = conn.cursor()
-
-        # Atualiza/insere usuário
-        c.execute('''
-            INSERT INTO users (user_id, first_name, username, last_interaction)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_id) DO UPDATE SET
-                first_name = COALESCE(EXCLUDED.first_name, users.first_name),
-                username = COALESCE(EXCLUDED.username, users.username),
-                last_interaction = EXCLUDED.last_interaction
-        ''', (user_id, first_name, username, datetime.now().isoformat()))
-
-        # Insere mensagem com suporte a mídia
-        media_sent = media_url is not None
-        c.execute('''
-            INSERT INTO messages (user_id, username, timestamp, role, content, media_sent, media_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ''', (user_id, username, datetime.now().isoformat(), role, content, media_sent, media_url))
-
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Erro ao salvar mensagem: {e}")
-
-def get_user_history(user_id, limit=6):
-    try:
-        conn = psycopg2.connect(os.environ['DATABASE_URL'])
-        c = conn.cursor()
-        c.execute('''SELECT role, content, username FROM messages
-                    WHERE user_id = %s
-                    ORDER BY timestamp DESC
-                    LIMIT %s''', (user_id, limit))
-        history = [{"role": row[0], "content": row[1], "username": row[2]} for row in c.fetchall()]
-        history.reverse()
-        conn.close()
-        return history
-    except Exception as e:
-        print(f"Erro ao obter histórico: {e}")
-        return []
-
-
-
-
 def deve_enviar_imagem(mensagem):
     """Verifica se a mensagem contém palavras-chave para enviar imagem"""
     mensagem = mensagem.lower()
@@ -426,8 +306,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
-    
- 
+
 
     
     # Lógica de fotos (1° pedido vs. pedidos seguintes)

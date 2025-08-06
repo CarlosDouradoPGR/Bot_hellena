@@ -145,7 +145,7 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         # 1. Verifica se o usuário já recebeu imagem
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
-        c.execute('SELECT imagem_enviada FROM users WHERE user_id = %s', (user.id,))
+        c.execute('SELECT media_sent FROM users WHERE user_id = %s', (user.id,))
         resultado = c.fetchone()
         conn.close()
 
@@ -176,7 +176,7 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
-        c.execute("UPDATE users SET imagem_enviada = TRUE WHERE user_id = %s", (user.id,))
+        c.execute("UPDATE users SET media_sent = TRUE WHERE user_id = %s", (user.id,))
         conn.commit()
         conn.close()
         

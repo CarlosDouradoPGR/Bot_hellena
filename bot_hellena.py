@@ -130,41 +130,50 @@ def get_user_history(user_id, limit=6):
 
 
 #NOVA FUNÇÃO TESTE 0
+
 def deve_enviar_imagem(mensagem):
     """Verifica se a mensagem contém palavras-chave para enviar imagem"""
     mensagem = mensagem.lower()
     return any(palavra in mensagem for palavra in PALAVRAS_CHAVE_IMAGENS)
     
-async def enviar_imagem_aleatoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Envia uma imagem aleatória da lista"""
+async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
+    
     try:
-        if not IMAGENS_HELLENA:
-            await update.message.reply_text("*Estou sem fotos no momento...* 😢")
-            return
-        
+        # 1. Envia a imagem primeiro
         imagem_url = random.choice(IMAGENS_HELLENA)
-        caption = "*Aqui está algo especial para você...* 😘"
-        
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
-            caption=caption,
-            parse_mode='Markdown'
+            caption="*Um pouco de mim...* 😘"
         )
         
+        # 2. Envia a mensagem com o link (2 segundos depois)
+        await asyncio.sleep(2)
+        mensagens_pos_imagem = [
+            "Quer ver mais? Minhas fotos mais ousadas estão aqui... 😈",
+            "Gostou? Tenho muito mais no meu lugar especial... 🔥",
+            "Isso é só um aperitivo... quer o prato principal? 😏"
+        ]
+        
+        await update.message.reply_text(
+            random.choice(mensagens_pos_imagem),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔓 Conteúdo Completo", url="https://seulink.com")]
+            ])
+        )
+        
+        # Registra no banco de dados
         save_message(
             user_id=user.id,
             role="assistant",
-            content=caption,
-            first_name=user.first_name,
-            username=user.username,
+            content=f"Imagem enviada + mensagem de upsell",
             media_url=imagem_url
         )
-    
+        
     except Exception as e:
-        print(f"Erro ao enviar imagem: {e}")
-        await update.message.reply_text("*Não consegui enviar a foto agora...* 😔")
+        print(f"Erro ao enviar foto: {e}")
+        await update.message.reply_text("*Oi amor, meu álbum travou... tenta de novo?* 😢")
 
 
 #NOVA FUNÇÃO TESTE 0 FIM
@@ -305,7 +314,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
-
+    
+#MUDANÇA NO CÓDIGO 0
+    if any(palavra in user_message for palavra in ["foto", "fotinha", "ver vc", "te ver", "imagem"]):
+        await responder_pedido_foto(update, context)  # Note o context agora!
+        return
+#MUDANÇA NO CÓDIGO 0
+    
     try:
         if not user_message or not user_message.strip():
             await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")

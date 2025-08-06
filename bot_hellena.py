@@ -24,8 +24,8 @@ PALAVRAS_CHAVE_IMAGENS = [
 
 # Configuração de imagens (substitua pelas suas URLs)
 IMAGENS_HELLENA = [
-    "https://i.imgur.com/9ERRpS8.jpeg",
-    "https://i.imgur.com/NvLa1mS.jpeg"
+    "https://i.imgur.com/NvLa1mS.jpeg",
+    "https://i.imgur.com/dqV17wo.jpeg"
 ]
 
 # Variáveis de ambiente - OBRIGATÓRIAS no Railway

@@ -316,9 +316,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await responder_pedido_foto(update, context)
             return
+    #### Mostram mensagem recebida no log
     print(f"\n[USER] {user.first_name}: {user_message}")
     try:
-        print(f"[BOT] Hellena: {texto_msg[:100]}...")
         if not user_message or not user_message.strip():
             await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
             return
@@ -348,6 +348,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto_msg = formatar_para_markdown(texto_msg)
         save_message(user.id, "assistant", texto_msg)  # Salva apenas no banco de dados
 
+        ###Mostra mensagem enviada no log
+        print(f"[BOT] Hellena: {texto_msg[:100]}...")
+
+        
         # Divide e envia a resposta (mantido para qualidade de conversação)
         partes = dividir_por_pontos(texto_msg)
         if len(partes) > 1 and len(partes[-1].strip()) < 3:

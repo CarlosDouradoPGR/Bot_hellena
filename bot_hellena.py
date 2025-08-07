@@ -791,11 +791,7 @@ async def main():
         print(f"ERRO: Variáveis de ambiente faltando: {', '.join(missing_vars)}")
         return
 
-    application = ApplicationBuilder()
-    .token(TOKEN_TELEGRAM)
-    .read_timeout(15)  # Aumenta para 30 segundos
-    .write_timeout(15) 
-    .build()
+    application = ApplicationBuilder().token(TOKEN_TELEGRAM).read_timeout(15).build()  # Aumenta para 30 segundos.write_timeout(15)
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

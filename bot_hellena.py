@@ -12,6 +12,41 @@ import os
 import asyncio
 import random
 
+#Função temporaria banco de dados:
+def init_db():
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        
+        # Verifica se a coluna transcription existe
+        c.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'user_audios_sent' 
+                    AND column_name = 'transcription'
+                ) THEN
+                    ALTER TABLE user_audios_sent ADD COLUMN transcription TEXT;
+                END IF;
+            END $$;
+        """)
+        
+        conn.commit()
+        print("Banco de dados verificado/atualizado com sucesso!")
+    except Exception as e:
+        print(f"FALHA AO INICIALIZAR BANCO: {e}")
+        raise  # Re-lança a exceção para ficar visível
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+# Chame esta função no início do seu main()
+init_db()
+
+
+
+
 # Configuração inicial
 nest_asyncio.apply()
 
@@ -216,12 +251,12 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 #####  FUNÇÕES DE ENVIO DE ÁUDIOS 
 
 def check_audio_sent(user_id: int, audio_name: str) -> bool:
-    """Verificação à prova de falhas"""
+    """Versão que funciona mesmo sem a coluna transcription"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
         
-        # Verifica se a tabela existe primeiro
+        # Verifica se a tabela existe
         c.execute("""
             SELECT EXISTS (
                 SELECT 1 FROM information_schema.tables 
@@ -231,68 +266,71 @@ def check_audio_sent(user_id: int, audio_name: str) -> bool:
         table_exists = c.fetchone()[0]
         
         if not table_exists:
-            init_db()  # Tenta criar a tabela
-            return False  # Assume que não foi enviado
-        
+            init_db()
+            return False
+            
+        # Verifica de forma compatível
         c.execute('''
             SELECT 1 FROM user_audios_sent 
             WHERE user_id = %s AND audio_name = %s
             LIMIT 1
         ''', (user_id, audio_name))
         
-        exists = c.fetchone() is not None
-        return exists
+        return c.fetchone() is not None
         
     except Exception as e:
         print(f"ERRO AO VERIFICAR ÁUDIO: {e}")
-        return False  # Fail-safe
+        return False
     finally:
         if 'conn' in locals():
             conn.close()
 
 def mark_audio_sent(user_id: int, audio_type: str) -> bool:
-    """Garante que o áudio seja marcado como enviado no banco"""
+    """Versão robusta que cria a coluna se necessário"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
         
-        # Verifica se a tabela existe
-        c.execute("""
-            INSERT INTO user_audios_sent (user_id, audio_name, transcription)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id, audio_name) 
-            DO UPDATE SET sent_at = NOW()
-        """, (
-            user_id, 
-            audio_type, 
-            AUDIOS_HELLENA.get(audio_type, {}).get('transcricao', '')
-        ))
-        
-        conn.commit()
-        return True
-        
-    except psycopg2.Error as e:
-        print(f"ERRO NO BANCO DE DADOS: {e}")
-        # Log detalhado do erro
-        import traceback
-        traceback.print_exc()
-        
-        # Tenta criar a tabela se não existir
+        # Tenta inserir normalmente
         try:
             c.execute("""
-                CREATE TABLE IF NOT EXISTS user_audios_sent (
-                    user_id BIGINT NOT NULL,
-                    audio_name TEXT NOT NULL,
-                    sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    transcription TEXT,
-                    PRIMARY KEY (user_id, audio_name)
-                )
-            """)
+                INSERT INTO user_audios_sent 
+                (user_id, audio_name, transcription)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, audio_name) 
+                DO UPDATE SET sent_at = NOW()
+            """, (
+                user_id, 
+                audio_type, 
+                AUDIOS_HELLENA.get(audio_type, {}).get('transcricao', '')
+            ))
             conn.commit()
-            print("Tabela user_audios_sent criada com sucesso!")
-            return mark_audio_sent(user_id, audio_type)  # Tenta novamente
-        except:
-            return False
+            return True
+            
+        except psycopg2.errors.UndefinedColumn:
+            # Se falhar por causa da coluna, cria a coluna e tenta novamente
+            conn.rollback()
+            c.execute("ALTER TABLE user_audios_sent ADD COLUMN IF NOT EXISTS transcription TEXT")
+            conn.commit()
+            
+            # Tenta o INSERT novamente
+            c.execute("""
+                INSERT INTO user_audios_sent 
+                (user_id, audio_name, transcription)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, audio_name) 
+                DO UPDATE SET sent_at = NOW()
+            """, (
+                user_id, 
+                audio_type, 
+                AUDIOS_HELLENA.get(audio_type, {}).get('transcricao', '')
+            ))
+            conn.commit()
+            return True
+            
+    except psycopg2.Error as e:
+        print(f"ERRO CRÍTICO NO BANCO: {e}")
+        return False
     finally:
         if 'conn' in locals():
             conn.close()
@@ -978,7 +1016,11 @@ Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qua
 deve comprar seu conteúdo e quando o lead demonstra interesse, levar ele ao seu conteúdo:
  https://bit.ly/4mmlt3G
 """
-
+##################print para depuração ##########
+print("Testando mark_audio_sent...")
+print("Resultado:", mark_audio_sent(12345, "pix"))
+print("Testando check_audio_sent...")
+print("Já enviado?", check_audio_sent(12345, "pix"))
 print(f"DEBUG: Tentando marcar áudio {audio_type} para user {user_id}")
 success = mark_audio_sent(user_id, audio_type)
 print(f"DEBUG: Resultado do mark_audio_sent: {success}")

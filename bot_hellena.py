@@ -53,27 +53,27 @@ def save_message(user_id, role, content, first_name=None, username=None, media_u
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
 
-        # Atualiza/insere usuário
+        # Atualiza/insere usuário (agora com media_sent)
         c.execute('''
-            INSERT INTO users (user_id, first_name, username, last_interaction)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO users (user_id, first_name, username, last_interaction, media_sent)
+            VALUES (%s, %s, %s, %s, FALSE)
             ON CONFLICT (user_id) DO UPDATE SET
                 first_name = COALESCE(EXCLUDED.first_name, users.first_name),
                 username = COALESCE(EXCLUDED.username, users.username),
                 last_interaction = EXCLUDED.last_interaction
         ''', (user_id, first_name, username, datetime.now().isoformat()))
 
-        # Insere mensagem com suporte a mídia
-        media_sent = media_url is not None
+        # Insere mensagem (sem media_sent)
         c.execute('''
-            INSERT INTO messages (user_id, username, timestamp, role, content, media_sent, media_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ''', (user_id, username, datetime.now().isoformat(), role, content, media_sent, media_url))
+            INSERT INTO messages (user_id, username, timestamp, role, content, media_url)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (user_id, username, datetime.now().isoformat(), role, content, media_url))
 
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"Erro ao salvar mensagem: {e}")
+
 
 def get_user_history(user_id, limit=6):
     try:
@@ -103,12 +103,12 @@ def deve_enviar_imagem(mensagem):
 
 # Adicione esta função auxiliar para verificar se já enviou foto
 def user_received_photo(user_id):
+    """Verifica se o usuário já recebeu foto (agora na tabela users)"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
-        c.execute('''SELECT media_sent FROM messages 
-                    WHERE user_id = %s AND media_sent = TRUE
-                    LIMIT 1''', (user_id,))
+        c.execute('''SELECT media_sent FROM users 
+                    WHERE user_id = %s AND media_sent = TRUE''', (user_id,))
         result = c.fetchone()
         conn.close()
         return result is not None
@@ -116,11 +116,25 @@ def user_received_photo(user_id):
         print(f"Erro ao verificar foto enviada: {e}")
         return False
 
+def mark_media_sent(user_id):
+    """Marca que o usuário recebeu foto (na tabela users)"""
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute('''UPDATE users SET media_sent = TRUE
+                    WHERE user_id = %s''', (user_id,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Erro ao marcar foto como enviada: {e}")
+        return False
+
+
 # Modifique a função responder_pedido_foto
 async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     
-    # Verifica se já recebeu foto antes
     if user_received_photo(user.id):
         mensagens = [
             "Adoraria te mostrar mais, mas isso é só para os meus especiais... 😈",
@@ -140,7 +154,6 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     try:
-        # Envia a primeira foto
         imagem_url = random.choice(IMAGENS_HELLENA)
         LEGENDA_FOTOS = [
             "Um pouco de mim... mas tem muito mais no meu conteúdo especial 😈", 
@@ -158,7 +171,10 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
             ])
         )
         
-        # Registra no banco de dados
+        # Marca que o usuário recebeu foto (na tabela users)
+        mark_media_sent(user.id)
+        
+        # Registra no banco de dados (sem media_sent)
         save_message(
             user_id=user.id,
             role="assistant",

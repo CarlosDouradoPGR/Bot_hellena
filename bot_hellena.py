@@ -34,15 +34,15 @@ AUDIO_BASE_URL = "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.git
 
 AUDIOS_HELLENA = {
     "pix": {
-        "url": f"{AUDIO_BASE_URL}Eu_vou_te_mandar_a_minha_chave_pix.ogg",
+        "url": f"{AUDIO_BASE_URL}chave_pix.ogg",
         "transcricao": "Eu vou te mandar a minha chave pix"
     },
     "trabalho": {
-        "url": f"{AUDIO_BASE_URL}OI_tudo_bem_trabalho_com_venda_de_packs.ogg", 
+        "url": f"{AUDIO_BASE_URL}trabalho_com.ogg", 
         "transcricao": "Oi tudo bem? Trabalho com venda de packs"
     },
     "pagamento": {  # Corrigir nome para consistência
-        "url": f"{AUDIO_BASE_URL}aceito_todo_tipo_de_pagamento.ogg",
+        "url": f"{AUDIO_BASE_URL}tipo_de_pagamento.ogg",
         "transcricao": "Aceito todo tipo de pagamento"
     }
 }

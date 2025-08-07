@@ -216,39 +216,36 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 #####ENVIO DE ÁUDIOS 
 
 async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_msg = update.message.text.lower()
-    
-    # Verifica qual áudio enviar
-    audio_type = None
-    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
-        if any(palavra in user_msg for palavra in palavras):
-            audio_type = tipo
-            break
-    
-    # Default se não encontrar
-    if not audio_type:
-        audio_type = "trabalho"  # Ou o tipo que preferir como padrão
-    
-    # Obtém dados do áudio
-    audio = AUDIOS_HELLENA.get(audio_type, AUDIOS_HELLENA["trabalho"])
-    
     try:
+        user_msg = update.message.text.lower()
+        audio_type = "trabalho"  # Valor padrão
+        
+        # Detecta o tipo de áudio solicitado
+        for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+            if any(palavra in user_msg for palavra in palavras):
+                audio_type = tipo
+                break
+
+        audio = AUDIOS_HELLENA.get(audio_type)
+        
+        # Envia APENAS o áudio, sem caption ou botões
         await context.bot.send_voice(
             chat_id=update.effective_chat.id,
-            voice=audio["url"],
-            caption="💋",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📲 Ver Meus Links", url="https://bit.ly/4mmlt3G")]
-            ])
+            voice=audio["url"]
+            # Removidos: caption e reply_markup
         )
         
-        # Registra para a IA
+        # Registra no banco de dados (opcional)
         save_message(
-            update.message.from_user.id,
-            "assistant",
-            f"[ÁUDIO_ENVIADO: {audio['transcricao']}]",
+            user_id=update.message.from_user.id,
+            role="assistant",
+            content=f"[ÁUDIO_ENVIADO: {audio['transcricao']}",
             media_url=audio["url"]
         )
+
+    except Exception as e:
+        print(f"Erro ao enviar áudio: {e}")
+        await update.message.reply_text("O áudio não carregou...", parse_mode=None)
         
     except Exception as e:
         print(f"Erro ao enviar áudio: {e}")

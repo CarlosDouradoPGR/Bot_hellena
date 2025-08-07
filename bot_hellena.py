@@ -216,37 +216,86 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 #####  FUNÇÕES DE ENVIO DE ÁUDIOS 
 
 def check_audio_sent(user_id: int, audio_name: str) -> bool:
-    """Verifica de forma confiável se o áudio já foi enviado"""
+    """Verificação à prova de falhas"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
+        
+        # Verifica se a tabela existe primeiro
+        c.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_name = 'user_audios_sent'
+            )
+        """)
+        table_exists = c.fetchone()[0]
+        
+        if not table_exists:
+            init_db()  # Tenta criar a tabela
+            return False  # Assume que não foi enviado
+        
         c.execute('''
             SELECT 1 FROM user_audios_sent 
             WHERE user_id = %s AND audio_name = %s
             LIMIT 1
         ''', (user_id, audio_name))
+        
         exists = c.fetchone() is not None
-        conn.close()
         return exists
+        
     except Exception as e:
-        print(f"Erro crítico ao verificar áudio: {e}")
+        print(f"ERRO AO VERIFICAR ÁUDIO: {e}")
         return False  # Fail-safe
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
-def mark_audio_sent(user_id: int, audio_type: str):
-    """Registra que o usuário recebeu o áudio"""
+def mark_audio_sent(user_id: int, audio_type: str) -> bool:
+    """Garante que o áudio seja marcado como enviado no banco"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
-        c.execute('''
+        
+        # Verifica se a tabela existe
+        c.execute("""
             INSERT INTO user_audios_sent (user_id, audio_name, transcription)
             VALUES (%s, %s, %s)
-            ON CONFLICT (user_id, audio_name) DO UPDATE SET
-                transcription = EXCLUDED.transcription
-        ''', (user_id, audio_type, AUDIOS_HELLENA[audio_type]["transcricao"]))
+            ON CONFLICT (user_id, audio_name) 
+            DO UPDATE SET sent_at = NOW()
+        """, (
+            user_id, 
+            audio_type, 
+            AUDIOS_HELLENA.get(audio_type, {}).get('transcricao', '')
+        ))
+        
         conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Erro ao registrar áudio enviado: {e}")
+        return True
+        
+    except psycopg2.Error as e:
+        print(f"ERRO NO BANCO DE DADOS: {e}")
+        # Log detalhado do erro
+        import traceback
+        traceback.print_exc()
+        
+        # Tenta criar a tabela se não existir
+        try:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS user_audios_sent (
+                    user_id BIGINT NOT NULL,
+                    audio_name TEXT NOT NULL,
+                    sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    transcription TEXT,
+                    PRIMARY KEY (user_id, audio_name)
+                )
+            """)
+            conn.commit()
+            print("Tabela user_audios_sent criada com sucesso!")
+            return mark_audio_sent(user_id, audio_type)  # Tenta novamente
+        except:
+            return False
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 
 
@@ -929,6 +978,10 @@ Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qua
 deve comprar seu conteúdo e quando o lead demonstra interesse, levar ele ao seu conteúdo:
  https://bit.ly/4mmlt3G
 """
+
+print(f"DEBUG: Tentando marcar áudio {audio_type} para user {user_id}")
+success = mark_audio_sent(user_id, audio_type)
+print(f"DEBUG: Resultado do mark_audio_sent: {success}")
 
 # Inicialização do bot
 async def main():

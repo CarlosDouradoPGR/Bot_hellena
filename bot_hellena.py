@@ -125,7 +125,7 @@ def deve_enviar_imagem(mensagem):
     mensagem = mensagem.lower()
     return any(palavra in mensagem for palavra in PALAVRAS_CHAVE_IMAGENS)
     
-##### MUDANÇAS NO ENVIO DE MIDIA
+##### MUDANÇAS NO ENVIO DE FOTOS
 
 # Adicione esta função auxiliar para verificar se já enviou foto
 def user_received_photo(user_id):
@@ -213,45 +213,142 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("*Oi amor, meu álbum travou... tenta de novo?* 😢")
 
 
-#####ENVIO DE ÁUDIOS 
+#####  FUNÇÕES DE ENVIO DE ÁUDIOS 
 
-async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def check_audio_sent(user_id: int, audio_name: str) -> bool:
+    """Verifica se o usuário já recebeu este áudio"""
     try:
-        user_msg = update.message.text.lower()
-        audio_type = "trabalho"  # Valor padrão
-        
-        # Detecta o tipo de áudio solicitado
-        for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
-            if any(palavra in user_msg for palavra in palavras):
-                audio_type = tipo
-                break
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute('''
+            SELECT 1 FROM user_audios_sent 
+            WHERE user_id = %s AND audio_name = %s
+        ''', (user_id, audio_name))
+        exists = c.fetchone() is not None
+        conn.close()
+        return exists
+    except Exception as e:
+        print(f"Erro ao verificar áudio enviado: {e}")
+        return False
 
-        audio = AUDIOS_HELLENA.get(audio_type)
-        
-        # Envia APENAS o áudio, sem caption ou botões
+def mark_audio_sent(user_id: int, audio_name: str):
+    """Registra que o usuário recebeu o áudio"""
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO user_audios_sent (user_id, audio_name)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, audio_name) DO NOTHING
+        ''', (user_id, audio_name))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao registrar áudio enviado: {e}")
+
+async def enviar_audio_exclusivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    user_msg = update.message.text.lower()
+    
+    # Determina o tipo de áudio solicitado
+    audio_type = None
+    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+        if any(palavra in user_msg for palavra in palavras):
+            audio_type = tipo
+            break
+    
+    if not audio_type:
+        return  # Não é um pedido de áudio
+    
+    audio_info = AUDIOS_HELLENA.get(audio_type)
+    
+    # Verifica se já enviou este áudio antes
+    if check_audio_sent(user.id, audio_type):
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[PEDIDO_DE_AUDIO_JA_ENVIADO: {audio_info['transcricao']}]"
+        )
+        await update.message.reply_text(
+            text="Você já ouviu esse meu áudio... quer algo mais? 😘",
+            parse_mode=None
+        )
+        return
+    
+    try:
+        # Envia o áudio (sem caption ou botões)
         await context.bot.send_voice(
             chat_id=update.effective_chat.id,
-            voice=audio["url"]
-            # Removidos: caption e reply_markup
+            voice=audio_info["url"]
         )
         
-        # Registra no banco de dados (opcional)
+        # Marca como enviado no banco
+        mark_audio_sent(user.id, audio_type)
+        
+        # Registra no histórico
         save_message(
-            user_id=update.message.from_user.id,
+            user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_ENVIADO: {audio['transcricao']}",
-            media_url=audio["url"]
+            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
+            media_url=audio_info["url"]
         )
-
-    except Exception as e:
-        print(f"Erro ao enviar áudio: {e}")
-        await update.message.reply_text("O áudio não carregou...", parse_mode=None)
         
     except Exception as e:
         print(f"Erro ao enviar áudio: {e}")
-        await update.message.reply_text("Meu áudio não carregou, amor... Tenta de novo? 😘")
+        await update.message.reply_text(
+            "Não consegui enviar o áudio agora... 😢",
+            parse_mode=None
+        )
 
 
+async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    user_msg = update.message.text.lower()
+    
+    # 1. Detecta qual áudio foi pedido
+    audio_type = None
+    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+        if any(palavra in user_msg for palavra in palavras):
+            audio_type = tipo
+            break
+    
+    if not audio_type:
+        return  # Não era pedido de áudio
+    
+    audio_info = AUDIOS_HELLENA[audio_type]
+    
+    # 2. Verifica se JÁ ENVIOU antes
+    if check_audio_sent(user.id, audio_type):
+        # 2A. Se JÁ enviou: registra contexto SEM enviar
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[ÁUDIO_REPETIDO_BLOQUEADO: {audio_info['transcricao']}]"
+        )
+        await update.message.reply_text("Já te mandei esse áudio antes... quer que eu fale mais sobre? 😈")
+        return
+    
+    # 3. Se NÃO enviou ainda: envia e registra
+    try:
+        # Envia o áudio (sem extras)
+        await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_info["url"])
+        
+        # Marca como enviado no banco
+        mark_audio_sent(user.id, audio_type)
+        
+        # Registra para a IA
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
+            media_url=audio_info["url"]
+        )
+    
+    except Exception as e:
+        print(f"Falha no áudio: {e}")
+        await update.message.reply_text("Meu áudio travou, amor... 😢")
+
+##################################### Funções auxiliares
 def update_intimacy(user_id):
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
@@ -263,7 +360,7 @@ def update_intimacy(user_id):
     except Exception as e:
         print(f"Erro ao atualizar intimidade: {e}")
 
-# Funções auxiliares
+
 def analisar_intensidade(mensagem):
     return any(palavra in mensagem.lower() for palavra in GATILHOS_LINGUAGEM_OUSADA)
 

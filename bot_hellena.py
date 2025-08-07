@@ -263,29 +263,34 @@ async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_
     if not audio_type:
         return  # Não era pedido de áudio
     
-    audio_info = AUDIOS_HELLENA[audio_type]
-    
-    # 2. Verifica se JÁ ENVIOU antes
+    # 2. Verifica se JÁ ENVIOU antes (AGORA FUNCIONANDO CORRETAMENTE)
     if check_audio_sent(user.id, audio_type):
-        # Registra no histórico sem enviar o áudio novamente
+        # Registra o contexto sem enviar áudio
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_SOLICITADO_NOVAMENTE: {audio_info['transcricao']}]"
+            content=f"[ÁUDIO_SOLICITADO_NOVAMENTE: {AUDIOS_HELLENA[audio_type]['transcricao']}]"
         )
-        # Não envia mensagem fixa, deixa o fluxo continuar normalmente
-        return
+        return  # SAÍDA SILENCIOSA - deixa a IA responder naturalmente
     
     # 3. Se NÃO enviou ainda: envia e registra
     try:
-        await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_info["url"])
+        await context.bot.send_voice(
+            chat_id=update.effective_chat.id,
+            voice=AUDIOS_HELLENA[audio_type]["url"]
+        )
+        
+        # Marca como enviado no banco
         mark_audio_sent(user.id, audio_type)
+        
+        # Registra para a IA
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
-            media_url=audio_info["url"]
+            content=f"[ÁUDIO_ENVIADO: {AUDIOS_HELLENA[audio_type]['transcricao']}]",
+            media_url=AUDIOS_HELLENA[audio_type]["url"]
         )
+    
     except Exception as e:
         print(f"Falha no áudio: {e}")
         await update.message.reply_text("Meu áudio travou, amor... 😢")

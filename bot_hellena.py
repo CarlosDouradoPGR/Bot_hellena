@@ -91,34 +91,7 @@ def get_user_history(user_id, limit=6):
         print(f"Erro ao obter histórico: {e}")
         return []
 
-####Função para resetar banco de dados!!
 
-async def reset_db(update: Update, context):
-    user = update.message.from_user
-    
-    # Verifica se é o admin
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("❌ Você não tem permissão!")
-        return
-
-    try:
-        conn = psycopg2.connect(os.environ['DATABASE_URL'].replace('postgres://', 'postgresql://'))
-        conn.autocommit = True
-        cursor = conn.cursor()
-        
-        cursor.execute('TRUNCATE TABLE messages, users RESTART IDENTITY CASCADE')
-        cursor.execute('ALTER SEQUENCE messages_id_seq RESTART WITH 1')
-        
-        await update.message.reply_text("✅ Banco de dados resetado com sucesso!")
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro: {str(e)}")
-    finally:
-        if 'conn' in locals():
-            conn.close()
-
-
-####Função para resetar banco de dados!!
 
 
 def deve_enviar_imagem(mensagem):
@@ -791,8 +764,7 @@ async def main():
         print(f"ERRO: Variáveis de ambiente faltando: {', '.join(missing_vars)}")
         return
 
-    application = ApplicationBuilder().token(TOKEN_TELEGRAM).read_timeout(15).build()  # Aumenta para 30 segundos.write_timeout(15)
-    application.add_handler(CommandHandler("reset", reset_db))
+    application = ApplicationBuilder().token(TOKEN_TELEGRAM).read_timeout(30).write_timeout(30) .build()  # Aumenta para 30 segundos.write_timeout(15)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

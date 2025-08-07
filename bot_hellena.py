@@ -231,74 +231,22 @@ def check_audio_sent(user_id: int, audio_name: str) -> bool:
         print(f"Erro ao verificar áudio enviado: {e}")
         return False
 
-def mark_audio_sent(user_id: int, audio_name: str):
+def mark_audio_sent(user_id: int, audio_type: str):
     """Registra que o usuário recebeu o áudio"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
         c.execute('''
-            INSERT INTO user_audios_sent (user_id, audio_name)
-            VALUES (%s, %s)
-            ON CONFLICT (user_id, audio_name) DO NOTHING
-        ''', (user_id, audio_name))
+            INSERT INTO user_audios_sent (user_id, audio_name, transcription)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, audio_name) DO UPDATE SET
+                transcription = EXCLUDED.transcription
+        ''', (user_id, audio_type, AUDIOS_HELLENA[audio_type]["transcricao"]))
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"Erro ao registrar áudio enviado: {e}")
 
-async def enviar_audio_exclusivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    user_msg = update.message.text.lower()
-    
-    # Determina o tipo de áudio solicitado
-    audio_type = None
-    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
-        if any(palavra in user_msg for palavra in palavras):
-            audio_type = tipo
-            break
-    
-    if not audio_type:
-        return  # Não é um pedido de áudio
-    
-    audio_info = AUDIOS_HELLENA.get(audio_type)
-    
-    # Verifica se já enviou este áudio antes
-    if check_audio_sent(user.id, audio_type):
-        save_message(
-            user_id=user.id,
-            role="assistant",
-            content=f"[PEDIDO_DE_AUDIO_JA_ENVIADO: {audio_info['transcricao']}]"
-        )
-        await update.message.reply_text(
-            text="Você já ouviu esse meu áudio... quer algo mais? 😘",
-            parse_mode=None
-        )
-        return
-    
-    try:
-        # Envia o áudio (sem caption ou botões)
-        await context.bot.send_voice(
-            chat_id=update.effective_chat.id,
-            voice=audio_info["url"]
-        )
-        
-        # Marca como enviado no banco
-        mark_audio_sent(user.id, audio_type)
-        
-        # Registra no histórico
-        save_message(
-            user_id=user.id,
-            role="assistant",
-            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
-            media_url=audio_info["url"]
-        )
-        
-    except Exception as e:
-        print(f"Erro ao enviar áudio: {e}")
-        await update.message.reply_text(
-            "Não consegui enviar o áudio agora... 😢",
-            parse_mode=None
-        )
 
 
 async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -319,31 +267,25 @@ async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_
     
     # 2. Verifica se JÁ ENVIOU antes
     if check_audio_sent(user.id, audio_type):
-        # 2A. Se JÁ enviou: registra contexto SEM enviar
+        # Registra no histórico sem enviar o áudio novamente
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_REPETIDO_BLOQUEADO: {audio_info['transcricao']}]"
+            content=f"[ÁUDIO_SOLICITADO_NOVAMENTE: {audio_info['transcricao']}]"
         )
-        await update.message.reply_text("Já te mandei esse áudio antes... quer que eu fale mais sobre? 😈")
+        # Não envia mensagem fixa, deixa o fluxo continuar normalmente
         return
     
     # 3. Se NÃO enviou ainda: envia e registra
     try:
-        # Envia o áudio (sem extras)
         await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_info["url"])
-        
-        # Marca como enviado no banco
         mark_audio_sent(user.id, audio_type)
-        
-        # Registra para a IA
         save_message(
             user_id=user.id,
             role="assistant",
             content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
             media_url=audio_info["url"]
         )
-    
     except Exception as e:
         print(f"Falha no áudio: {e}")
         await update.message.reply_text("Meu áudio travou, amor... 😢")
@@ -650,6 +592,23 @@ Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
 
 3. Para pedidos de novos áudios:
    "Adoraria mandar mais, mas só no meu conteúdo exclusivo... 🔥"
+
+🎙 TRATAMENTO DE ÁUDIOS:
+1. Quando o usuário solicitar um áudio que já foi enviado:
+   - Não envie o áudio novamente
+   - Não mencione que já enviou antes
+   - Continue a conversa naturalmente como se tivesse acabado de ouvir o áudio
+   - Use a transcrição do áudio como contexto para sua resposta
+
+2. Exemplos:
+   Usuário pergunta sobre pagamento (novamente):
+   - "Já te expliquei que aceito Pix, cartão... qual você prefere? 😘"
+   
+   Usuário pergunta sobre packs (novamente):
+   - "Meus packs são bem completos, amor... quer que eu te mostre o que tem no VIP? 🔥"
+
+
+   
 
 🎯 OBJETIVO FINAL:
 Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qual motivos o lead

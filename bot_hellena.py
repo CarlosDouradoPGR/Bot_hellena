@@ -90,6 +90,7 @@ def get_user_history(user_id, limit=6):
         print(f"Erro ao obter histórico: {e}")
         return []
 
+####Função para resetar banco de dados!!
 
 def deve_enviar_imagem(mensagem):
     """Verifica se a mensagem contém palavras-chave para enviar imagem"""

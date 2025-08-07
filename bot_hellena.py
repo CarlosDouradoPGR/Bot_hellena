@@ -216,20 +216,21 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 #####  FUNÇÕES DE ENVIO DE ÁUDIOS 
 
 def check_audio_sent(user_id: int, audio_name: str) -> bool:
-    """Verifica se o usuário já recebeu este áudio"""
+    """Verifica de forma confiável se o áudio já foi enviado"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
         c.execute('''
             SELECT 1 FROM user_audios_sent 
             WHERE user_id = %s AND audio_name = %s
+            LIMIT 1
         ''', (user_id, audio_name))
         exists = c.fetchone() is not None
         conn.close()
         return exists
     except Exception as e:
-        print(f"Erro ao verificar áudio enviado: {e}")
-        return False
+        print(f"Erro crítico ao verificar áudio: {e}")
+        return False  # Fail-safe
 
 def mark_audio_sent(user_id: int, audio_type: str):
     """Registra que o usuário recebeu o áudio"""
@@ -253,47 +254,51 @@ async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_
     user = update.message.from_user
     user_msg = update.message.text.lower()
     
-    # 1. Detecta qual áudio foi pedido
-    audio_type = None
-    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
-        if any(palavra in user_msg for palavra in palavras):
-            audio_type = tipo
-            break
+    # 1. Identifica exatamente qual áudio foi pedido
+    audio_type = next((tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
+                     if any(p in user_msg for p in palavras)), None)
     
     if not audio_type:
-        return  # Não era pedido de áudio
-    
-    # 2. Verifica se JÁ ENVIOU antes (AGORA FUNCIONANDO CORRETAMENTE)
+        return
+
+    # 2. Verificação À PROVA DE FALHAS
     if check_audio_sent(user.id, audio_type):
-        # Registra o contexto sem enviar áudio
-        save_message(
-            user_id=user.id,
-            role="assistant",
-            content=f"[ÁUDIO_SOLICITADO_NOVAMENTE: {AUDIOS_HELLENA[audio_type]['transcricao']}]"
-        )
-        return  # SAÍDA SILENCIOSA - deixa a IA responder naturalmente
-    
-    # 3. Se NÃO enviou ainda: envia e registra
+        print(f"DEBUG: Áudio {audio_type} já enviado para {user.id}")
+        return  # Saída silenciosa
+
+    # 3. Envio e registro ATÔMICO
     try:
+        # Primeiro marca como enviado (para evitar concorrência)
+        mark_audio_sent(user.id, audio_type)
+        
+        # Depois envia o áudio
         await context.bot.send_voice(
             chat_id=update.effective_chat.id,
             voice=AUDIOS_HELLENA[audio_type]["url"]
         )
         
-        # Marca como enviado no banco
-        mark_audio_sent(user.id, audio_type)
-        
-        # Registra para a IA
+        # Registro completo no histórico
         save_message(
             user_id=user.id,
             role="assistant",
             content=f"[ÁUDIO_ENVIADO: {AUDIOS_HELLENA[audio_type]['transcricao']}]",
             media_url=AUDIOS_HELLENA[audio_type]["url"]
         )
-    
+        
+        print(f"DEBUG: Áudio {audio_type} enviado com sucesso para {user.id}")
+        
     except Exception as e:
-        print(f"Falha no áudio: {e}")
-        await update.message.reply_text("Meu áudio travou, amor... 😢")
+        print(f"FALHA GRAVE no áudio {audio_type}: {str(e)}")
+        # Reverte a marcação se falhou
+        try:
+            conn = psycopg2.connect(os.environ['DATABASE_URL'])
+            c = conn.cursor()
+            c.execute('DELETE FROM user_audios_sent WHERE user_id = %s AND audio_name = %s', 
+                     (user.id, audio_type))
+            conn.commit()
+            conn.close()
+        except Exception as db_error:
+            print(f"ERRO CRÍTICO AO REVERTER: {db_error}")
 
 ##################################### Funções auxiliares
 def update_intimacy(user_id):

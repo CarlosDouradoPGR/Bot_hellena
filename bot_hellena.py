@@ -28,6 +28,32 @@ IMAGENS_HELLENA = [
     "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto2.jpeg",
     "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto3.jpeg"
 ]
+#### Arquivos de áudio
+
+AUDIO_BASE_URL = "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/main/audios/"
+
+AUDIOS_HELLENA = {
+    "pix": {
+        "url": f"{AUDIO_BASE_URL}Eu_vou_te_mandar_a_minha_chave_pix.ogg",
+        "transcricao": "Eu vou te mandar a minha chave pix"
+    },
+    "trabalho": {
+        "url": f"{AUDIO_BASE_URL}OI_tudo_bem_trabalho_com_venda_de_packs.ogg", 
+        "transcricao": "Oi tudo bem? Trabalho com venda de packs"
+    },
+    "pagamento": {  # Corrigir nome para consistência
+        "url": f"{AUDIO_BASE_URL}aceito_todo_tipo_de_pagamento.ogg",
+        "transcricao": "Aceito todo tipo de pagamento"
+    }
+}
+
+PALAVRAS_CHAVE_AUDIOS = {
+    "pix": ["pix", "chave pix", "pagamento", "doação"],
+    "trabalho": ["trabalho", "packs", "conteúdo", "venda"],
+    "pagamento": ["cartão", "picpay", "boleto", "transferência"]
+}
+
+
 
 # Variáveis de ambiente - OBRIGATÓRIAS no Railway
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -187,7 +213,46 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("*Oi amor, meu álbum travou... tenta de novo?* 😢")
 
 
-#NOVA FUNÇÃO TESTE 0 FIM
+#####ENVIO DE ÁUDIOS 
+
+async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_msg = update.message.text.lower()
+    
+    # Verifica qual áudio enviar
+    audio_type = None
+    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+        if any(palavra in user_msg for palavra in palavras):
+            audio_type = tipo
+            break
+    
+    # Default se não encontrar
+    if not audio_type:
+        audio_type = "trabalho"  # Ou o tipo que preferir como padrão
+    
+    # Obtém dados do áudio
+    audio = AUDIOS_HELLENA.get(audio_type, AUDIOS_HELLENA["trabalho"])
+    
+    try:
+        await context.bot.send_voice(
+            chat_id=update.effective_chat.id,
+            voice=audio["url"],
+            caption="💋",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📲 Ver Meus Links", url="https://bit.ly/4mmlt3G")]
+            ])
+        )
+        
+        # Registra para a IA
+        save_message(
+            update.message.from_user.id,
+            "assistant",
+            f"[ÁUDIO_ENVIADO: {audio['transcricao']}]",
+            media_url=audio["url"]
+        )
+        
+    except Exception as e:
+        print(f"Erro ao enviar áudio: {e}")
+        await update.message.reply_text("Meu áudio não carregou, amor... Tenta de novo? 😘")
 
 
 def update_intimacy(user_id):
@@ -326,7 +391,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
 
-
+    ###############FUNÇÕES DE AUDIO#################
+    # Primeiro verifica pedidos de áudio
+    if any(palavra in user_message.lower() for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
+        await enviar_audio_contextual(update, context)
+        return
+        
+    # Depois verifica pedidos de foto
+    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
+        if user_received_photo(user.id):
+            pass
+        else:
+            await responder_pedido_foto(update, context)
+            return
     
     # Lógica de fotos (1° pedido vs. pedidos seguintes)
     if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
@@ -335,6 +412,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await responder_pedido_foto(update, context)
             return
+    ###############FUNÇÕES DE AUDIO#################
+    
     #### Mostram mensagem recebida no log
     print(f"\n[USER] {user.first_name}: {user_message}")
     try:
@@ -464,6 +543,19 @@ Hellena: "Safado... Vem ver o que preparei  https://bit.ly/4mmlt3G"
 
 Lead: Onde consigo seu conteúdo?
 Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
+
+🎙 DIRETRIZES DE ÁUDIO:
+1. Quando o usuário comentar sobre um áudio enviado:
+   - Responda como se tivesse realmente dito aquilo
+   - Exemplo: 
+     Usuário: "Que voz linda no áudio!"
+     Você: "Ah, gostou do meu jeitinho? No privado eu falo muito mais... 😈"
+
+2. Sempre que enviar áudio, adicione ao histórico:
+   [ÁUDIO_ENVIADO: {transcrição exata}]
+
+3. Para pedidos de novos áudios:
+   "Adoraria mandar mais, mas só no meu conteúdo exclusivo... 🔥"
 
 🎯 OBJETIVO FINAL:
 Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qual motivos o lead

@@ -48,7 +48,7 @@ AUDIOS_HELLENA = {
 }
 
 PALAVRAS_CHAVE_AUDIOS = {
-    "pix": ["pix", "chave pix", "pagamento", "doação"],
+    "pix": ["pix", "chave pix", "doação"],
     "trabalho": ["trabalho", "packs", "conteúdo", "venda"],
     "pagamento": ["cartão", "picpay", "boleto", "transferência", "pagamentos"]
 }

@@ -33,6 +33,7 @@ IMAGENS_HELLENA = [
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
 TOKEN_TELEGRAM = os.environ.get('TELEGRAM_TOKEN')
+ADMIN_ID = os.environ.get('ADMIN_ID')
 
 # Configurações do bot
 DELAY_ENTRE_FRASES = 2.2
@@ -91,6 +92,34 @@ def get_user_history(user_id, limit=6):
         return []
 
 ####Função para resetar banco de dados!!
+
+async def reset_db(update: Update, context):
+    user = update.message.from_user
+    
+    # Verifica se é o admin
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Você não tem permissão!")
+        return
+
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'].replace('postgres://', 'postgresql://'))
+        conn.autocommit = True
+        cursor = conn.cursor()
+        
+        cursor.execute('TRUNCATE TABLE messages, users RESTART IDENTITY CASCADE')
+        cursor.execute('ALTER SEQUENCE messages_id_seq RESTART WITH 1')
+        
+        await update.message.reply_text("✅ Banco de dados resetado com sucesso!")
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro: {str(e)}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+
+####Função para resetar banco de dados!!
+
 
 def deve_enviar_imagem(mensagem):
     """Verifica se a mensagem contém palavras-chave para enviar imagem"""

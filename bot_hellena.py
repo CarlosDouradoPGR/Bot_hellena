@@ -792,7 +792,7 @@ async def main():
         return
 
     application = ApplicationBuilder().token(TOKEN_TELEGRAM).read_timeout(15).build()  # Aumenta para 30 segundos.write_timeout(15)
-    
+    application.add_handler(CommandHandler("reset", reset_db))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

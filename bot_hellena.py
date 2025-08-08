@@ -14,6 +14,8 @@ import nest_asyncio
 nest_asyncio.apply()
 
 # Configurações
+LEGENDA_FOTOS = ["Gostou Amor...?", "Acha que aguenta quanto tempo comigo?", "Não manda pra ninguém tá?"]
+
 PALAVRAS_CHAVE_IMAGENS = [
     "foto", "fotinha", "foto sua", "seu corpo", 
     "quero ver", "mostra mais", "mostra você",

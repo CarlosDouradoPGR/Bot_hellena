@@ -215,27 +215,31 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
-    user_msg = update.message.text.lower()
+    user_msg = update.message.text
     
-    audio_type = next((tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
-                      if any(p in user_msg for p in palavras)), None)
+    # Determina qual áudio foi pedido
+    audio_type = next(
+        (tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
+         if any(palavra in user_msg.lower() for palavra in palavras)),
+        None
+    )
     
     if not audio_type:
-        return
-
+        return  # Não é um pedido de áudio
+    
     audio_info = AUDIOS_HELLENA.get(audio_type)
-    if not audio_info:
-        return
-
+    
+    # Se já enviou o áudio, deixa a IA responder naturalmente
     if check_audio_sent(user.id, audio_type):
+        # Adiciona contexto no histórico
         save_message(
             user_id=user.id,
-            role="assistant",
-            content=f"[ÁUDIO_REPETIDO_BLOQUEADO: {audio_info['transcricao']}"
+            role="system",
+            content=f"[ÁUDIO_{audio_type.upper()}_JA_ENVIADO]"
         )
-        await update.message.reply_text("Já te mandei esse áudio antes... quer que eu fale mais sobre? 😈")
-        return
+        return False  # Permite que o handle_message continue o fluxo
     
+    # Se não enviou ainda, envia o áudio
     try:
         await context.bot.send_voice(
             chat_id=update.effective_chat.id,
@@ -249,11 +253,12 @@ async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_
             content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
             media_url=audio_info["url"]
         )
+        return True  # Indica que o áudio foi enviado
     
     except Exception as e:
-        print(f"Audio error: {e}")
+        print(f"Erro ao enviar áudio: {e}")
         await update.message.reply_text("Meu áudio travou, amor... 😢")
-
+        return True
 # Message processing
 def analisar_intensidade(mensagem):
     return any(palavra in mensagem.lower() for palavra in GATILHOS_LINGUAGEM_OUSADA)
@@ -344,6 +349,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
 
+    if any(palavra in user_message.lower() for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
+        audio_enviado = await enviar_audio_contextual(update, context)
+        if audio_enviado:  # Se enviou o áudio, não continua
+            return
+            
+    
     # Verifica pedidos de áudio
     if any(palavra in user_message.lower() for palavra in 
           [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
@@ -485,6 +496,19 @@ Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
 
 3. Para pedidos de novos áudios:
    "Adoraria mandar mais, mas só no meu conteúdo exclusivo... 🔥"
+
+TRATAMENTO DE ÁUDIOS REPETIDOS:
+- Quando o usuário pedir um áudio já enviado:
+  - Não mencione explicitamente que já enviou
+  - Continue a conversa naturalmente
+  - Use o contexto do áudio como base
+  - Exemplos:
+    * Usuário pergunta sobre pagamento novamente:
+      "Amor, como eu te disse, aceito todos os tipos... quer que eu explique melhor algum? 😘"
+    * Usuário pede Pix novamente:
+      "Já te passei minha chave, quer que eu te ajude com algo mais? 💋"
+
+
 
 🎯 OBJETIVO FINAL:
 Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qual motivos o lead

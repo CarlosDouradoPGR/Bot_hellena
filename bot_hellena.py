@@ -184,11 +184,8 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
-            caption=f"{random.choice(LEGENDA_FOTOS)}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("😈 Ver Mais", url="https://bit.ly/4mmlt3G")]
-            ])
-        )
+            caption=f"{random.choice(LEGENDA_FOTOS)}"
+            )
         
         mark_media_sent(user.id)
         save_message(

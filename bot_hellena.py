@@ -337,7 +337,7 @@ def mark_audio_sent(user_id: int, audio_type: str) -> bool:
 
 
 
-async def async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_msg = update.message.text.lower()
     

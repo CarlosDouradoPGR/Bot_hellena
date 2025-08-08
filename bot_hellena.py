@@ -88,18 +88,20 @@ def save_message(user_id, role, content, first_name=None, username=None, media_u
     except Exception as e:
         print(f"Database error: {e}")
 
-def get_user_history(user_id, limit=6):
+def get_user_history(user_id, limit=8):
+    """Agora pega mais mensagens para melhor contexto"""
     try:
         with db_connection() as conn:
             with conn.cursor() as c:
-                c.execute('''SELECT role, content, username FROM messages
-                            WHERE user_id = %s
-                            ORDER BY timestamp DESC
-                            LIMIT %s''', (user_id, limit))
-                history = [{"role": row[0], "content": row[1], "username": row[2]} for row in c.fetchall()]
-                return history[::-1]  # Reverse to get chronological order
+                c.execute('''
+                    SELECT role, content FROM messages
+                    WHERE user_id = %s
+                    ORDER BY timestamp DESC
+                    LIMIT %s
+                ''', (user_id, limit))
+                return [{"role": row[0], "content": row[1]} for row in c.fetchall()][::-1]
     except Exception as e:
-        print(f"Database error: {e}")
+        print(f"Erro ao obter histórico: {e}")
         return []
 
 def user_received_photo(user_id):
@@ -213,52 +215,44 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         print(f"Error sending photo: {e}")
         await update.message.reply_text("*Oi amor, meu álbum travou... tenta de novo?* 😢")
 
-async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Envia áudio se necessário e sempre retorna False para continuar o fluxo"""
     user = update.message.from_user
     user_msg = update.message.text
     
-    # Determina qual áudio foi pedido
     audio_type = next(
         (tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
          if any(palavra in user_msg.lower() for palavra in palavras)),
         None
     )
     
-    if not audio_type:
-        return  # Não é um pedido de áudio
+    if not audio_type or audio_type not in AUDIOS_HELLENA:
+        return False
     
-    audio_info = AUDIOS_HELLENA.get(audio_type)
+    audio_info = AUDIOS_HELLENA[audio_type]
     
-    # Se já enviou o áudio, deixa a IA responder naturalmente
-    if check_audio_sent(user.id, audio_type):
-        # Adiciona contexto no histórico
-        save_message(
-            user_id=user.id,
-            role="system",
-            content=f"[ÁUDIO_{audio_type.upper()}_JA_ENVIADO]"
-        )
-        return False  # Permite que o handle_message continue o fluxo
+    # Envia o áudio se for a primeira vez
+    if not check_audio_sent(user.id, audio_type):
+        try:
+            await context.bot.send_voice(
+                chat_id=update.effective_chat.id,
+                voice=audio_info["url"]
+            )
+            mark_audio_sent(user.id, audio_type)
+        except Exception as e:
+            print(f"Erro ao enviar áudio: {e}")
     
-    # Se não enviou ainda, envia o áudio
-    try:
-        await context.bot.send_voice(
-            chat_id=update.effective_chat.id,
-            voice=audio_info["url"]
-        )
-        
-        mark_audio_sent(user.id, audio_type)
-        save_message(
-            user_id=user.id,
-            role="assistant",
-            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
-            media_url=audio_info["url"]
-        )
-        return True  # Indica que o áudio foi enviado
+    # Registra no histórico como contexto
+    save_message(
+        user_id=user.id,
+        role="system",
+        content=f"[CONTEXTO_ÁUDIO: {audio_info['transcricao']}]"
+    )
     
-    except Exception as e:
-        print(f"Erro ao enviar áudio: {e}")
-        await update.message.reply_text("Meu áudio travou, amor... 😢")
-        return True
+    return False  # Sempre continua o fluxo para a IA responder
+
+
+
 # Message processing
 def analisar_intensidade(mensagem):
     return any(palavra in mensagem.lower() for palavra in GATILHOS_LINGUAGEM_OUSADA)
@@ -349,51 +343,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
 
-    if any(palavra in user_message.lower() for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
-        audio_enviado = await enviar_audio_contextual(update, context)
-        if audio_enviado:  # Se enviou o áudio, não continua
-            return
-            
-    
-    # Verifica pedidos de áudio
-    if any(palavra in user_message.lower() for palavra in 
-          [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
-        await enviar_audio_contextual(update, context)
+    # 1. Verificação de mensagem vazia primeiro
+    if not user_message.strip():
+        await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
         return
-        
-    # Verifica pedidos de foto
+
+    # 2. Processa pedidos de mídia (áudio/foto) SEM interromper o fluxo
     if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
         await responder_pedido_foto(update, context)
-        return
-    
+        # Continua mesmo depois de enviar foto
+
+    # 3. Processa áudios de forma não-bloqueante
+    audio_solicitado = any(
+        palavra in user_message.lower() 
+        for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]
+    )
+    if audio_solicitado:
+        await enviar_audio_contextual(update, context)
+        # Continua o fluxo mesmo após enviar áudio
+
+    # 4. Registra a mensagem do usuário
+    save_message(
+        user_id=user.id,
+        role="user",
+        content=user_message,
+        first_name=user.first_name,
+        username=user.username
+    )
+
+    # 5. Prepara contexto para a IA
+    history = get_user_history(user.id)
+    if analisar_intensidade(user_message):
+        update_intimacy(user.id)
+
+    messages = [
+        {"role": "system", "content": system_message},
+        *history,
+        {"role": "user", "content": user_message}
+    ]
+
+    # 6. Obtém resposta da IA
     try:
-        if not user_message.strip():
-            await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
-            return
-
-        save_message(user.id, "user", user_message, 
-                    first_name=user.first_name, username=user.username)
-
-        history = get_user_history(user.id)
-        if analisar_intensidade(user_message):
-            update_intimacy(user.id)
-
-        messages = [
-            {"role": "system", "content": system_message},
-            *history,
-            {"role": "user", "content": user_message}
-        ]
-
         bot_reply = await get_deepseek_response(messages)
         if not bot_reply.strip():
             bot_reply = "*Oi amor, estou com problemas para responder agora...* 😢"
 
+        # 7. Processa e envia a resposta
         texto_msg, reply_markup = processar_links_para_botoes(bot_reply)
         save_message(user.id, "assistant", texto_msg)
 
         partes = dividir_por_pontos(texto_msg)
         if len(partes) > 1 and len(partes[-1].strip()) < 3:
-            partes[-2] = partes[-2] + " " + partes[-1]
+            partes[-2] += " " + partes[-1]
             partes = partes[:-1]
 
         for i, parte in enumerate(partes):
@@ -411,8 +412,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "😔 Oops, meu celular travou... vamos recomeçar?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("👉 Tentar novamente", callback_data="retry")]
-            ])
+            )
         )
+        
 
 # System message (seu prompt completo)
 system_message = """

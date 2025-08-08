@@ -164,40 +164,25 @@ def update_intimacy(user_id):
         print(f"Database error: {e}")
 
 # Media handling
-async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Envia foto se necessário e sempre retorna False para continuar o fluxo"""
     user = update.message.from_user
     
+    # Se já enviou foto antes, apenas registra no contexto
     if user_received_photo(user.id):
-        mensagens = [
-            "Adoraria te mostrar mais, mas isso é só para os meus especiais... 😈",
-            "Quer ver tudo mesmo? É só no meu conteúdo exclusivo... 🔥",
-            "Isso aí é só prévia amor... o melhor tá no meu link 😘",
-            "Safado... quer mais? Vem ver tudo que eu tenho... 💋"
-        ]
-        texto = f"{random.choice(mensagens)}\n\n👉 https://bit.ly/4mmlt3G"
-        
-        await update.message.reply_text(
-            text=texto,
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔥 Ver Conteúdo Completo", url="https://bit.ly/4mmlt3G")]
-            ])
+        save_message(
+            user_id=user.id,
+            role="system",
+            content="[FOTO_JA_ENVIADA_ANTERIORMENTE]"
         )
-        return
-
+        return False
+    
     try:
         imagem_url = random.choice(IMAGENS_HELLENA)
-        legendas = [
-            "Um pouco de mim... mas tem muito mais no meu conteúdo especial 😈", 
-            "Gostou? Isso é só uma amostra... quer ver o resto? 🔥",
-            "Prévia especial pra você... o melhor tá no link 😘",
-            "Só um gostinho... quer ver tudo? 💋"
-        ]
-        
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=imagem_url,
-            caption=f"{random.choice(legendas)}\n\n👉 https://bit.ly/4mmlt3G",
+            caption=f"{random.choice(LEGENDA_FOTOS)}\n\n👉 https://bit.ly/4mmlt3G",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("😈 Ver Mais", url="https://bit.ly/4mmlt3G")]
             ])
@@ -207,13 +192,15 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         save_message(
             user_id=user.id,
             role="assistant",
-            content="Imagem enviada + mensagem de upsell",
+            content="[FOTO_ENVIADA]",
             media_url=imagem_url
         )
-
+        return True
+    
     except Exception as e:
-        print(f"Error sending photo: {e}")
+        print(f"Erro ao enviar foto: {e}")
         await update.message.reply_text("*Oi amor, meu álbum travou... tenta de novo?* 😢")
+        return False
 
 async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Envia áudio se necessário e sempre retorna False para continuar o fluxo"""
@@ -343,16 +330,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
 
-    # 1. Verificação de mensagem vazia primeiro
+   # 1. Verificação de mensagem vazia primeiro
     if not user_message.strip():
         await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
         return
 
     # 2. Processa pedidos de mídia (áudio/foto) SEM interromper o fluxo
-    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
-        await responder_pedido_foto(update, context)
+    foto_solicitada = any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS)
+    if foto_solicitada:
+        await responder_pedido_foto(update, context)  # Agora não bloqueia o fluxo
 
-    # 3. Processa áudios de forma não-bloqueante
     audio_solicitado = any(
         palavra in user_message.lower() 
         for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]
@@ -496,6 +483,15 @@ Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
 
 3. Para pedidos de novos áudios:
    "Adoraria mandar mais, mas só no meu conteúdo exclusivo... 🔥"
+
+📸 TRATAMENTO DE FOTOS ENVIADAS:
+- Quando vir [FOTO_JA_ENVIADA_ANTERIORMENTE] no histórico:
+- Não diga explicitamente que já enviou
+- Continue a conversa naturalmente
+- Sugira conteúdo exclusivo de forma sutil
+- Exemplos:
+* "Adoro quando me pedem fotos... quer ver algo mais ousado? 😈"
+* "Essa foi só uma amostra... quer ver o álbum completo? 🔥"
 
 TRATAMENTO DE ÁUDIOS REPETIDOS:
 - Quando o usuário pedir um áudio já enviado:

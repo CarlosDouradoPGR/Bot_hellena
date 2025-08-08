@@ -12,41 +12,6 @@ import os
 import asyncio
 import random
 
-#Função temporaria banco de dados:
-def init_db():
-    try:
-        conn = psycopg2.connect(os.environ['DATABASE_URL'])
-        c = conn.cursor()
-        
-        # Verifica se a coluna transcription existe
-        c.execute("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'user_audios_sent' 
-                    AND column_name = 'transcription'
-                ) THEN
-                    ALTER TABLE user_audios_sent ADD COLUMN transcription TEXT;
-                END IF;
-            END $$;
-        """)
-        
-        conn.commit()
-        print("Banco de dados verificado/atualizado com sucesso!")
-    except Exception as e:
-        print(f"FALHA AO INICIALIZAR BANCO: {e}")
-        raise  # Re-lança a exceção para ficar visível
-    finally:
-        if 'conn' in locals():
-            conn.close()
-
-# Chame esta função no início do seu main()
-init_db()
-
-
-
-
 # Configuração inicial
 nest_asyncio.apply()
 
@@ -251,129 +216,137 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
 #####  FUNÇÕES DE ENVIO DE ÁUDIOS 
 
 def check_audio_sent(user_id: int, audio_name: str) -> bool:
-    """Versão que funciona mesmo sem a coluna transcription"""
+    """Verifica se o usuário já recebeu este áudio"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
-        
-        # Verifica se a tabela existe
-        c.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_name = 'user_audios_sent'
-            )
-        """)
-        table_exists = c.fetchone()[0]
-        
-        if not table_exists:
-            init_db()
-            return False
-            
-        # Verifica de forma compatível
         c.execute('''
             SELECT 1 FROM user_audios_sent 
             WHERE user_id = %s AND audio_name = %s
-            LIMIT 1
         ''', (user_id, audio_name))
-        
-        return c.fetchone() is not None
-        
+        exists = c.fetchone() is not None
+        conn.close()
+        return exists
     except Exception as e:
-        print(f"ERRO AO VERIFICAR ÁUDIO: {e}")
+        print(f"Erro ao verificar áudio enviado: {e}")
         return False
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
-def mark_audio_sent(user_id: int, audio_type: str) -> bool:
-    """Versão robusta que cria a coluna se necessário"""
+def mark_audio_sent(user_id: int, audio_name: str):
+    """Registra que o usuário recebeu o áudio"""
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
         c = conn.cursor()
-        
-        # Tenta inserir normalmente
-        try:
-            c.execute("""
-                INSERT INTO user_audios_sent 
-                (user_id, audio_name, transcription)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (user_id, audio_name) 
-                DO UPDATE SET sent_at = NOW()
-            """, (
-                user_id, 
-                audio_type, 
-                AUDIOS_HELLENA.get(audio_type, {}).get('transcricao', '')
-            ))
-            conn.commit()
-            return True
-            
-        except psycopg2.errors.UndefinedColumn:
-            # Se falhar por causa da coluna, cria a coluna e tenta novamente
-            conn.rollback()
-            c.execute("ALTER TABLE user_audios_sent ADD COLUMN IF NOT EXISTS transcription TEXT")
-            conn.commit()
-            
-            # Tenta o INSERT novamente
-            c.execute("""
-                INSERT INTO user_audios_sent 
-                (user_id, audio_name, transcription)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (user_id, audio_name) 
-                DO UPDATE SET sent_at = NOW()
-            """, (
-                user_id, 
-                audio_type, 
-                AUDIOS_HELLENA.get(audio_type, {}).get('transcricao', '')
-            ))
-            conn.commit()
-            return True
-            
-    except psycopg2.Error as e:
-        print(f"ERRO CRÍTICO NO BANCO: {e}")
-        return False
-    finally:
-        if 'conn' in locals():
-            conn.close()
+        c.execute('''
+            INSERT INTO user_audios_sent (user_id, audio_name)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, audio_name) DO NOTHING
+        ''', (user_id, audio_name))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao registrar áudio enviado: {e}")
 
+async def enviar_audio_exclusivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    user_msg = update.message.text.lower()
+    
+    # Determina o tipo de áudio solicitado
+    audio_type = None
+    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+        if any(palavra in user_msg for palavra in palavras):
+            audio_type = tipo
+            break
+    
+    if not audio_type:
+        return  # Não é um pedido de áudio
+    
+    audio_info = AUDIOS_HELLENA.get(audio_type)
+    
+    # Verifica se já enviou este áudio antes
+    if check_audio_sent(user.id, audio_type):
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[PEDIDO_DE_AUDIO_JA_ENVIADO: {audio_info['transcricao']}]"
+        )
+        await update.message.reply_text(
+            text="Você já ouviu esse meu áudio... quer algo mais? 😘",
+            parse_mode=None
+        )
+        return
+    
+    try:
+        # Envia o áudio (sem caption ou botões)
+        await context.bot.send_voice(
+            chat_id=update.effective_chat.id,
+            voice=audio_info["url"]
+        )
+        
+        # Marca como enviado no banco
+        mark_audio_sent(user.id, audio_type)
+        
+        # Registra no histórico
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
+            media_url=audio_info["url"]
+        )
+        
+    except Exception as e:
+        print(f"Erro ao enviar áudio: {e}")
+        await update.message.reply_text(
+            "Não consegui enviar o áudio agora... 😢",
+            parse_mode=None
+        )
 
 
 async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_msg = update.message.text.lower()
     
-    audio_type = next((tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
-                     if any(p in user_msg for p in palavras)), None)
+    # 1. Detecta qual áudio foi pedido
+    audio_type = None
+    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+        if any(palavra in user_msg for palavra in palavras):
+            audio_type = tipo
+            break
     
     if not audio_type:
-        return
-
+        return  # Não era pedido de áudio
+    
+    audio_info = AUDIOS_HELLENA[audio_type]
+    
+    # 2. Verifica se JÁ ENVIOU antes
     if check_audio_sent(user.id, audio_type):
+        # 2A. Se JÁ enviou: registra contexto SEM enviar
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_SOLICITADO_NOVAMENTE: {AUDIOS_HELLENA[audio_type]['transcricao']}]"
+            content=f"[ÁUDIO_REPETIDO_BLOQUEADO: {audio_info['transcricao']}]"
         )
+        await update.message.reply_text("Já te mandei esse áudio antes... quer que eu fale mais sobre? 😈")
         return
-
+    
+    # 3. Se NÃO enviou ainda: envia e registra
     try:
-        mark_audio_sent(user.id, audio_type)
-        await context.bot.send_voice(  # <-- Este await precisa estar em função async
-            chat_id=update.effective_chat.id,
-            voice=AUDIOS_HELLENA[audio_type]["url"]
-        )
+        # Envia o áudio (sem extras)
+        await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_info["url"])
         
+        # Marca como enviado no banco
+        mark_audio_sent(user.id, audio_type)
+        
+        # Registra para a IA
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_ENVIADO: {AUDIOS_HELLENA[audio_type]['transcricao']}]",
-            media_url=AUDIOS_HELLENA[audio_type]["url"]
+            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
+            media_url=audio_info["url"]
         )
-        
+    
     except Exception as e:
         print(f"Falha no áudio: {e}")
         await update.message.reply_text("Meu áudio travou, amor... 😢")
-
-
 
 ##################################### Funções auxiliares
 def update_intimacy(user_id):
@@ -511,70 +484,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
-    
-    try:
-        # 1. Verifica pedidos de áudio (sem bloquear o fluxo)
+
+    ###############FUNÇÕES DE AUDIO#################
+    # Primeiro verifica pedidos de áudio
+    if any(palavra in user_message.lower() for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
         await enviar_audio_contextual(update, context)
+        return
         
-        # Log da mensagem recebida
-        print(f"\n[USER] {user.first_name}: {user_message}")
-        
-        if not user_message.strip():
-            await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
+    # Depois verifica pedidos de foto
+    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
+        if user_received_photo(user.id):
+            pass
+        else:
+            await responder_pedido_foto(update, context)
             return
-
-        # 2. Registra a mensagem no banco
-        save_message(user.id, "user", user_message, user.first_name, user.username)
-
-        # 3. Obtém histórico e processa
-        history = get_user_history(user.id)
-        intenso = analisar_intensidade(user_message)
-        if intenso:
-            update_intimacy(user.id)
-
-        # 4. Prepara contexto para a IA
-        messages = [
-            {"role": "system", "content": system_message},
-            *history,
-            {"role": "user", "content": user_message}
-        ]
-
-        # 5. Obtém resposta da IA
-        bot_reply = await get_deepseek_response(messages)
-        
-        if not bot_reply or not isinstance(bot_reply, str) or not bot_reply.strip():
-            bot_reply = "*Oi amor, estou com problemas para responder agora...* 😢"
-
-        # 6. Processa e envia a resposta
-        texto_msg, reply_markup = processar_links_para_botoes(bot_reply)
-        texto_msg = formatar_para_markdown(texto_msg)
-        save_message(user.id, "assistant", texto_msg)
-
-        print(f"[BOT] Hellena: {texto_msg[:100]}...")
-
-        partes = dividir_por_pontos(texto_msg)
-        if len(partes) > 1 and len(partes[-1].strip()) < 3:
-            partes[-2] = partes[-2] + " " + partes[-1]
-            partes = partes[:-1]
-
-        for i, parte in enumerate(partes):
-            if parte.strip():
-                usar_botao = (i == len(partes)-1) and len(parte.strip()) >= 3
-                await update.message.reply_text(
-                    text=parte.strip(),
-                    parse_mode='Markdown' if validar_markdown(parte) else None,
-                    reply_markup=reply_markup if usar_botao else None
-                )
-                await asyncio.sleep(DELAY_ENTRE_FRASES)
-
-    except Exception as e:
-        print(f"Erro no handle_message: {e}")
-        await update.message.reply_text(
-            "😔 Oops, meu celular travou... vamos recomeçar?",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("👉 Tentar novamente", callback_data="retry")]
-            ])
-        )
+    
+    # Lógica de fotos (1° pedido vs. pedidos seguintes)
+    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
+        if user_received_photo(user.id):
+            pass  # Deixa o DeepSeek responder naturalmente
+        else:
+            await responder_pedido_foto(update, context)
+            return
     ###############FUNÇÕES DE AUDIO#################
     
     #### Mostram mensagem recebida no log
@@ -719,22 +650,6 @@ Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
 
 3. Para pedidos de novos áudios:
    "Adoraria mandar mais, mas só no meu conteúdo exclusivo... 🔥"
-
-🎙 TRATAMENTO DE ÁUDIOS REPETIDOS:
-1. Quando identificar [USUÁRIO_REPETIU_PEDIDO_DE_AUDIO:X]:
-   - Continue a conversa naturalmente
-   - Não mencione que já enviou o áudio antes
-   - Use o contexto da transcrição original
-   - Exemplo:
-     * Usuário pede Pix novamente:
-       "Já te mostrei como me enviar um presentinho... quer mesmo me ver feliz? 😈"
-
-2. Diretrizes:
-   - Mantenha o tom sensual e natural
-   - Nunca diga "já enviei isso antes"
-   - Use como oportunidade para aprofundar a conversa
-   - Direcione para o conteúdo premium quando oportuno
-
 
 🎯 OBJETIVO FINAL:
 Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qual motivos o lead
@@ -1045,14 +960,6 @@ Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qua
 deve comprar seu conteúdo e quando o lead demonstra interesse, levar ele ao seu conteúdo:
  https://bit.ly/4mmlt3G
 """
-##################print para depuração ##########
-print("Testando mark_audio_sent...")
-print("Resultado:", mark_audio_sent(12345, "pix"))
-print("Testando check_audio_sent...")
-print("Já enviado?", check_audio_sent(12345, "pix"))
-print(f"DEBUG: Tentando marcar áudio {audio_type} para user {user_id}")
-success = mark_audio_sent(user_id, audio_type)
-print(f"DEBUG: Resultado do mark_audio_sent: {success}")
 
 # Inicialização do bot
 async def main():

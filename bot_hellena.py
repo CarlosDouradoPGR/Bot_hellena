@@ -351,7 +351,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 2. Processa pedidos de mídia (áudio/foto) SEM interromper o fluxo
     if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
         await responder_pedido_foto(update, context)
-        # Continua mesmo depois de enviar foto
 
     # 3. Processa áudios de forma não-bloqueante
     audio_solicitado = any(
@@ -360,7 +359,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     if audio_solicitado:
         await enviar_audio_contextual(update, context)
-        # Continua o fluxo mesmo após enviar áudio
 
     # 4. Registra a mensagem do usuário
     save_message(
@@ -412,7 +410,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "😔 Oops, meu celular travou... vamos recomeçar?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("👉 Tentar novamente", callback_data="retry")]
-            )
+            ])
         )
         
 

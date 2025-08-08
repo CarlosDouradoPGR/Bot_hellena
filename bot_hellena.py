@@ -337,65 +337,41 @@ def mark_audio_sent(user_id: int, audio_type: str) -> bool:
 
 
 
-def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_msg = update.message.text.lower()
     
-    # 1. Identifica o tipo de áudio solicitado
-    audio_type = next(
-        (tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
-         if any(palavra in user_msg for palavra in palavras)),
-        None
-    )
+    audio_type = next((tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
+                     if any(p in user_msg for p in palavras)), None)
     
     if not audio_type:
-        return None  # Não é pedido de áudio
-    
-    # 2. Verifica se já foi enviado
+        return
+
     if check_audio_sent(user.id, audio_type):
-        # Registra no histórico sem bloquear o fluxo
         save_message(
             user_id=user.id,
-            role="system",
-            content=f"[USUÁRIO_REPETIU_PEDIDO_DE_AUDIO:{audio_type}]"
+            role="assistant",
+            content=f"[ÁUDIO_SOLICITADO_NOVAMENTE: {AUDIOS_HELLENA[audio_type]['transcricao']}]"
         )
-        return None  # Permite que a DeepSeek continue
-    
-    # 3. Se não foi enviado, envia o áudio
+        return
+
     try:
-        # Primeiro marca como enviado
         mark_audio_sent(user.id, audio_type)
-        
-        # Envia o áudio
-        await context.bot.send_voice(
+        await context.bot.send_voice(  # <-- Este await precisa estar em função async
             chat_id=update.effective_chat.id,
             voice=AUDIOS_HELLENA[audio_type]["url"]
         )
         
-        # Registra com a transcrição para contexto
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_ENVIADO:{AUDIOS_HELLENA[audio_type]['transcricao']}]",
+            content=f"[ÁUDIO_ENVIADO: {AUDIOS_HELLENA[audio_type]['transcricao']}]",
             media_url=AUDIOS_HELLENA[audio_type]["url"]
         )
         
     except Exception as e:
-        print(f"ERRO AO ENVIAR ÁUDIO: {e}")
-        # Reverte a marcação se falhou
-        try:
-            conn = psycopg2.connect(os.environ['DATABASE_URL'])
-            c = conn.cursor()
-            c.execute(
-                "DELETE FROM user_audios_sent WHERE user_id = %s AND audio_name = %s",
-                (user.id, audio_type)
-            )
-            conn.commit()
-        except Exception as db_error:
-            print(f"ERRO AO REVERTER MARCAÇÃO: {db_error}")
-        finally:
-            if 'conn' in locals():
-                conn.close()
+        print(f"Falha no áudio: {e}")
+        await update.message.reply_text("Meu áudio travou, amor... 😢")
 
 
 

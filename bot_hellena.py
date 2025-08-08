@@ -583,7 +583,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for i, parte in enumerate(partes):
             if parte.strip():
-                usar_botao = (i == len(partes)-1 and len(parte.strip()) >= 3
+                usar_botao = (i == len(partes)-1) and len(parte.strip()) >= 3
                 await update.message.reply_text(
                     text=parte.strip(),
                     parse_mode='Markdown' if validar_markdown(parte) else None,

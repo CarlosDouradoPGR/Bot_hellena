@@ -535,52 +535,70 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
-
-    ###############FUNÇÕES DE AUDIO#################
-    # Primeiro verifica pedidos de áudio
-    if any(palavra in user_message.lower() for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
-        await enviar_audio_contextual(update, context)
-        return
-        
-    # Depois verifica pedidos de foto
-    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
-        if user_received_photo(user.id):
-            pass
-        else:
-            await responder_pedido_foto(update, context)
-            return
     
-    # Lógica de fotos (1° pedido vs. pedidos seguintes)
-    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
-        if user_received_photo(user.id):
-            pass  # Deixa o DeepSeek responder naturalmente
-        else:
-            await responder_pedido_foto(update, context)
-
-            return
-
-    await enviar_audio_contextual(update, context)
-    
-    # 2. Processa a mensagem normalmente
     try:
+        # 1. Verifica pedidos de áudio (sem bloquear o fluxo)
+        await enviar_audio_contextual(update, context)
+        
+        # Log da mensagem recebida
+        print(f"\n[USER] {user.first_name}: {user_message}")
+        
         if not user_message.strip():
             await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
             return
 
+        # 2. Registra a mensagem no banco
         save_message(user.id, "user", user_message, user.first_name, user.username)
 
+        # 3. Obtém histórico e processa
         history = get_user_history(user.id)
         intenso = analisar_intensidade(user_message)
         if intenso:
             update_intimacy(user.id)
 
+        # 4. Prepara contexto para a IA
         messages = [
             {"role": "system", "content": system_message},
             *history,
             {"role": "user", "content": user_message}
         ]
 
+        # 5. Obtém resposta da IA
         bot_reply = await get_deepseek_response(messages)
+        
+        if not bot_reply or not isinstance(bot_reply, str) or not bot_reply.strip():
+            bot_reply = "*Oi amor, estou com problemas para responder agora...* 😢"
+
+        # 6. Processa e envia a resposta
+        texto_msg, reply_markup = processar_links_para_botoes(bot_reply)
+        texto_msg = formatar_para_markdown(texto_msg)
+        save_message(user.id, "assistant", texto_msg)
+
+        print(f"[BOT] Hellena: {texto_msg[:100]}...")
+
+        partes = dividir_por_pontos(texto_msg)
+        if len(partes) > 1 and len(partes[-1].strip()) < 3:
+            partes[-2] = partes[-2] + " " + partes[-1]
+            partes = partes[:-1]
+
+        for i, parte in enumerate(partes):
+            if parte.strip():
+                usar_botao = (i == len(partes)-1 and len(parte.strip()) >= 3
+                await update.message.reply_text(
+                    text=parte.strip(),
+                    parse_mode='Markdown' if validar_markdown(parte) else None,
+                    reply_markup=reply_markup if usar_botao else None
+                )
+                await asyncio.sleep(DELAY_ENTRE_FRASES)
+
+    except Exception as e:
+        print(f"Erro no handle_message: {e}")
+        await update.message.reply_text(
+            "😔 Oops, meu celular travou... vamos recomeçar?",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("👉 Tentar novamente", callback_data="retry")]
+            ])
+        )
     ###############FUNÇÕES DE AUDIO#################
     
     #### Mostram mensagem recebida no log

@@ -337,55 +337,67 @@ def mark_audio_sent(user_id: int, audio_type: str) -> bool:
 
 
 
-async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_msg = update.message.text.lower()
     
-    # 1. Identifica exatamente qual áudio foi pedido
-    audio_type = next((tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
-                     if any(p in user_msg for p in palavras)), None)
+    # 1. Identifica o tipo de áudio solicitado
+    audio_type = next(
+        (tipo for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items() 
+         if any(palavra in user_msg for palavra in palavras)),
+        None
+    )
     
     if not audio_type:
-        return
-
-    # 2. Verificação À PROVA DE FALHAS
+        return None  # Não é pedido de áudio
+    
+    # 2. Verifica se já foi enviado
     if check_audio_sent(user.id, audio_type):
-        print(f"DEBUG: Áudio {audio_type} já enviado para {user.id}")
-        return  # Saída silenciosa
-
-    # 3. Envio e registro ATÔMICO
+        # Registra no histórico sem bloquear o fluxo
+        save_message(
+            user_id=user.id,
+            role="system",
+            content=f"[USUÁRIO_REPETIU_PEDIDO_DE_AUDIO:{audio_type}]"
+        )
+        return None  # Permite que a DeepSeek continue
+    
+    # 3. Se não foi enviado, envia o áudio
     try:
-        # Primeiro marca como enviado (para evitar concorrência)
+        # Primeiro marca como enviado
         mark_audio_sent(user.id, audio_type)
         
-        # Depois envia o áudio
+        # Envia o áudio
         await context.bot.send_voice(
             chat_id=update.effective_chat.id,
             voice=AUDIOS_HELLENA[audio_type]["url"]
         )
         
-        # Registro completo no histórico
+        # Registra com a transcrição para contexto
         save_message(
             user_id=user.id,
             role="assistant",
-            content=f"[ÁUDIO_ENVIADO: {AUDIOS_HELLENA[audio_type]['transcricao']}]",
+            content=f"[ÁUDIO_ENVIADO:{AUDIOS_HELLENA[audio_type]['transcricao']}]",
             media_url=AUDIOS_HELLENA[audio_type]["url"]
         )
         
-        print(f"DEBUG: Áudio {audio_type} enviado com sucesso para {user.id}")
-        
     except Exception as e:
-        print(f"FALHA GRAVE no áudio {audio_type}: {str(e)}")
+        print(f"ERRO AO ENVIAR ÁUDIO: {e}")
         # Reverte a marcação se falhou
         try:
             conn = psycopg2.connect(os.environ['DATABASE_URL'])
             c = conn.cursor()
-            c.execute('DELETE FROM user_audios_sent WHERE user_id = %s AND audio_name = %s', 
-                     (user.id, audio_type))
+            c.execute(
+                "DELETE FROM user_audios_sent WHERE user_id = %s AND audio_name = %s",
+                (user.id, audio_type)
+            )
             conn.commit()
-            conn.close()
         except Exception as db_error:
-            print(f"ERRO CRÍTICO AO REVERTER: {db_error}")
+            print(f"ERRO AO REVERTER MARCAÇÃO: {db_error}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
+
+
 
 ##################################### Funções auxiliares
 def update_intimacy(user_id):
@@ -544,7 +556,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass  # Deixa o DeepSeek responder naturalmente
         else:
             await responder_pedido_foto(update, context)
+
             return
+
+    await enviar_audio_contextual(update, context)
+    
+    # 2. Processa a mensagem normalmente
+    try:
+        if not user_message.strip():
+            await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
+            return
+
+        save_message(user.id, "user", user_message, user.first_name, user.username)
+
+        history = get_user_history(user.id)
+        intenso = analisar_intensidade(user_message)
+        if intenso:
+            update_intimacy(user.id)
+
+        messages = [
+            {"role": "system", "content": system_message},
+            *history,
+            {"role": "user", "content": user_message}
+        ]
+
+        bot_reply = await get_deepseek_response(messages)
     ###############FUNÇÕES DE AUDIO#################
     
     #### Mostram mensagem recebida no log
@@ -690,22 +726,21 @@ Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
 3. Para pedidos de novos áudios:
    "Adoraria mandar mais, mas só no meu conteúdo exclusivo... 🔥"
 
-🎙 TRATAMENTO DE ÁUDIOS:
-1. Quando o usuário solicitar um áudio que já foi enviado:
-   - Não envie o áudio novamente
-   - Não mencione que já enviou antes
-   - Continue a conversa naturalmente como se tivesse acabado de ouvir o áudio
-   - Use a transcrição do áudio como contexto para sua resposta
+🎙 TRATAMENTO DE ÁUDIOS REPETIDOS:
+1. Quando identificar [USUÁRIO_REPETIU_PEDIDO_DE_AUDIO:X]:
+   - Continue a conversa naturalmente
+   - Não mencione que já enviou o áudio antes
+   - Use o contexto da transcrição original
+   - Exemplo:
+     * Usuário pede Pix novamente:
+       "Já te mostrei como me enviar um presentinho... quer mesmo me ver feliz? 😈"
 
-2. Exemplos:
-   Usuário pergunta sobre pagamento (novamente):
-   - "Já te expliquei que aceito Pix, cartão... qual você prefere? 😘"
-   
-   Usuário pergunta sobre packs (novamente):
-   - "Meus packs são bem completos, amor... quer que eu te mostre o que tem no VIP? 🔥"
+2. Diretrizes:
+   - Mantenha o tom sensual e natural
+   - Nunca diga "já enviei isso antes"
+   - Use como oportunidade para aprofundar a conversa
+   - Direcione para o conteúdo premium quando oportuno
 
-
-   
 
 🎯 OBJETIVO FINAL:
 Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qual motivos o lead

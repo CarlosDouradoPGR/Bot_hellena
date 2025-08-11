@@ -776,6 +776,18 @@ deve comprar seu conteúdo e quando o lead demonstra interesse, levar ele ao seu
 """
 
 # Inicialização do bot
+import os
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
+from telegram.error import Conflict, NetworkError
+import asyncio
+
 async def main():
     # Verificação das variáveis de ambiente
     required_vars = ['DATABASE_URL', 'DEEPSEEK_API_KEY', 'TELEGRAM_TOKEN']
@@ -785,12 +797,57 @@ async def main():
         print(f"ERRO: Variáveis de ambiente faltando: {', '.join(missing_vars)}")
         return
 
-    application = ApplicationBuilder().token(TOKEN_TELEGRAM).read_timeout(30).write_timeout(30) .build()  # Aumenta para 30 segundos.write_timeout(15)
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    try:
+        # Configuração da aplicação com timeouts ajustados
+        application = ApplicationBuilder() \
+            .token(os.environ['TELEGRAM_TOKEN']) \
+            .read_timeout(30) \
+            .write_timeout(50) \
+            .pool_timeout(30) \
+            .get_updates_timeout(30) \
+            .build()
 
-    print("Bot iniciado com sucesso!")
-    await application.run_polling()
+        # Remove qualquer webhook existente para garantir polling limpo
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        
+        # Registro dos handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+        print("🟢 Bot iniciado com sucesso! Aguardando mensagens...")
+        
+        # Inicia o polling com tratamento de reconexão
+        await application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            close_loop=False,
+            stop_signals=None
+        )
+
+    except Conflict as e:
+        print(f"🔴 ERRO: Conflito de instância detectado. Certifique-se que apenas uma instância está rodando. Detalhes: {e}")
+        print("🔄 Encerrando esta instância para evitar duplicação...")
+        await asyncio.sleep(5)  # Espera para evitar reinicialização muito rápida
+        raise SystemExit(1)
+
+    except NetworkError as e:
+        print(f"🌐 ERRO DE REDE: {e}. Tentando reconectar em 10 segundos...")
+        await asyncio.sleep(10)
+        return await main()  # Reconexão automática
+
+    except Exception as e:
+        print(f"❌ ERRO INESPERADO: {type(e).__name__}: {e}")
+        print("🔄 Reiniciando em 15 segundos...")
+        await asyncio.sleep(15)
+        return await main()  # Auto-recuperação
+
+    finally:
+        print("🔴 Bot encerrado corretamente.")
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 Bot encerrado pelo usuário")
 
 if __name__ == '__main__':
     asyncio.run(main())

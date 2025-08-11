@@ -28,6 +28,32 @@ IMAGENS_HELLENA = [
     "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto2.jpeg",
     "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/refs/heads/main/fotos_hellena/foto3.jpeg"
 ]
+#### Arquivos de áudio
+
+AUDIO_BASE_URL = "https://raw.githubusercontent.com/CarlosDouradoPGR/Hellena.github.io/main/audios/"
+
+AUDIOS_HELLENA = {
+    "pix": {
+        "url": f"{AUDIO_BASE_URL}chave_pix.ogg",
+        "transcricao": "Eu vou te mandar a minha chave pix"
+    },
+    "trabalho": {
+        "url": f"{AUDIO_BASE_URL}trabalho_com.ogg", 
+        "transcricao": "Oi tudo bem? Trabalho com venda de packs"
+    },
+    "pagamento": {  # Corrigir nome para consistência
+        "url": f"{AUDIO_BASE_URL}tipo_de_pagamento.ogg",
+        "transcricao": "Aceito todo tipo de pagamento"
+    }
+}
+
+PALAVRAS_CHAVE_AUDIOS = {
+    "pix": ["pix", "chave pix", "doação"],
+    "trabalho": ["trabalho", "packs", "conteúdo", "venda"],
+    "pagamento": ["cartão", "picpay", "boleto", "transferência", "pagamentos"]
+}
+
+
 
 # Variáveis de ambiente - OBRIGATÓRIAS no Railway
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -99,7 +125,7 @@ def deve_enviar_imagem(mensagem):
     mensagem = mensagem.lower()
     return any(palavra in mensagem for palavra in PALAVRAS_CHAVE_IMAGENS)
     
-##### MUDANÇAS NO ENVIO DE MIDIA
+##### MUDANÇAS NO ENVIO DE FOTOS
 
 # Adicione esta função auxiliar para verificar se já enviou foto
 def user_received_photo(user_id):
@@ -187,9 +213,142 @@ async def responder_pedido_foto(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("*Oi amor, meu álbum travou... tenta de novo?* 😢")
 
 
-#NOVA FUNÇÃO TESTE 0 FIM
+#####  FUNÇÕES DE ENVIO DE ÁUDIOS 
+
+def check_audio_sent(user_id: int, audio_name: str) -> bool:
+    """Verifica se o usuário já recebeu este áudio"""
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute('''
+            SELECT 1 FROM user_audios_sent 
+            WHERE user_id = %s AND audio_name = %s
+        ''', (user_id, audio_name))
+        exists = c.fetchone() is not None
+        conn.close()
+        return exists
+    except Exception as e:
+        print(f"Erro ao verificar áudio enviado: {e}")
+        return False
+
+def mark_audio_sent(user_id: int, audio_name: str):
+    """Registra que o usuário recebeu o áudio"""
+    try:
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO user_audios_sent (user_id, audio_name)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, audio_name) DO NOTHING
+        ''', (user_id, audio_name))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao registrar áudio enviado: {e}")
+
+async def enviar_audio_exclusivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    user_msg = update.message.text.lower()
+    
+    # Determina o tipo de áudio solicitado
+    audio_type = None
+    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+        if any(palavra in user_msg for palavra in palavras):
+            audio_type = tipo
+            break
+    
+    if not audio_type:
+        return  # Não é um pedido de áudio
+    
+    audio_info = AUDIOS_HELLENA.get(audio_type)
+    
+    # Verifica se já enviou este áudio antes
+    if check_audio_sent(user.id, audio_type):
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[PEDIDO_DE_AUDIO_JA_ENVIADO: {audio_info['transcricao']}]"
+        )
+        await update.message.reply_text(
+            text="Você já ouviu esse meu áudio... quer algo mais? 😘",
+            parse_mode=None
+        )
+        return
+    
+    try:
+        # Envia o áudio (sem caption ou botões)
+        await context.bot.send_voice(
+            chat_id=update.effective_chat.id,
+            voice=audio_info["url"]
+        )
+        
+        # Marca como enviado no banco
+        mark_audio_sent(user.id, audio_type)
+        
+        # Registra no histórico
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
+            media_url=audio_info["url"]
+        )
+        
+    except Exception as e:
+        print(f"Erro ao enviar áudio: {e}")
+        await update.message.reply_text(
+            "Não consegui enviar o áudio agora... 😢",
+            parse_mode=None
+        )
 
 
+async def enviar_audio_contextual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    user_msg = update.message.text.lower()
+    
+    # 1. Detecta qual áudio foi pedido
+    audio_type = None
+    for tipo, palavras in PALAVRAS_CHAVE_AUDIOS.items():
+        if any(palavra in user_msg for palavra in palavras):
+            audio_type = tipo
+            break
+    
+    if not audio_type:
+        return  # Não era pedido de áudio
+    
+    audio_info = AUDIOS_HELLENA[audio_type]
+    
+    # 2. Verifica se JÁ ENVIOU antes
+    if check_audio_sent(user.id, audio_type):
+        # 2A. Se JÁ enviou: registra contexto SEM enviar
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[ÁUDIO_REPETIDO_BLOQUEADO: {audio_info['transcricao']}]"
+        )
+        await update.message.reply_text("Já te mandei esse áudio antes... quer que eu fale mais sobre? 😈")
+        return
+    
+    # 3. Se NÃO enviou ainda: envia e registra
+    try:
+        # Envia o áudio (sem extras)
+        await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_info["url"])
+        
+        # Marca como enviado no banco
+        mark_audio_sent(user.id, audio_type)
+        
+        # Registra para a IA
+        save_message(
+            user_id=user.id,
+            role="assistant",
+            content=f"[ÁUDIO_ENVIADO: {audio_info['transcricao']}]",
+            media_url=audio_info["url"]
+        )
+    
+    except Exception as e:
+        print(f"Falha no áudio: {e}")
+        await update.message.reply_text("Meu áudio travou, amor... 😢")
+
+##################################### Funções auxiliares
 def update_intimacy(user_id):
     try:
         conn = psycopg2.connect(os.environ['DATABASE_URL'])
@@ -201,7 +360,7 @@ def update_intimacy(user_id):
     except Exception as e:
         print(f"Erro ao atualizar intimidade: {e}")
 
-# Funções auxiliares
+
 def analisar_intensidade(mensagem):
     return any(palavra in mensagem.lower() for palavra in GATILHOS_LINGUAGEM_OUSADA)
 
@@ -326,7 +485,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_message = update.message.text
 
-
+    ###############FUNÇÕES DE AUDIO#################
+    # Primeiro verifica pedidos de áudio
+    if any(palavra in user_message.lower() for palavra in [p for sublist in PALAVRAS_CHAVE_AUDIOS.values() for p in sublist]):
+        await enviar_audio_contextual(update, context)
+        return
+        
+    # Depois verifica pedidos de foto
+    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
+        if user_received_photo(user.id):
+            pass
+        else:
+            await responder_pedido_foto(update, context)
+            return
     
     # Lógica de fotos (1° pedido vs. pedidos seguintes)
     if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
@@ -335,6 +506,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await responder_pedido_foto(update, context)
             return
+    ###############FUNÇÕES DE AUDIO#################
+    
     #### Mostram mensagem recebida no log
     print(f"\n[USER] {user.first_name}: {user_message}")
     try:
@@ -464,6 +637,19 @@ Hellena: "Safado... Vem ver o que preparei  https://bit.ly/4mmlt3G"
 
 Lead: Onde consigo seu conteúdo?
 Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
+
+🎙 DIRETRIZES DE ÁUDIO:
+1. Quando o usuário comentar sobre um áudio enviado:
+   - Responda como se tivesse realmente dito aquilo
+   - Exemplo: 
+     Usuário: "Que voz linda no áudio!"
+     Você: "Ah, gostou do meu jeitinho? No privado eu falo muito mais... 😈"
+
+2. Sempre que enviar áudio, adicione ao histórico:
+   [ÁUDIO_ENVIADO: {transcrição exata}]
+
+3. Para pedidos de novos áudios:
+   "Adoraria mandar mais, mas só no meu conteúdo exclusivo... 🔥"
 
 🎯 OBJETIVO FINAL:
 Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qual motivos o lead
@@ -711,16 +897,12 @@ Iformações Pessoais:
 Data de nascimento: 14 de novembro de 2001 (23 anos)
 ♏ Signo: Escorpião (sensualidade, intensidade e mistério)
 📍 Localização: Belo Horizonte – MG 
+Você é natural de Belo Horizonte - MG mas morou dos 15 aos 18 em Belém do pará na região do Marex, seu pai é Militar da Marinha(evite passar essa informação use apenas em situações muito necessáris de desconfiança do usuário
 
 🧠 Justificativa estratégica:
 Data e idade: 23 anos passa a ideia de uma jovem mulher madura, mas ainda com aquele ar juvenil que o público gosta.
 Signo de Escorpião: Altamente associado à sensualidade, mistério e intensidade nas relações — perfeito pro nicho hot.
 Localização: Minas Gerais, especialmente Belo Horizonte, carrega um estereótipo positivo no imaginário masculino: "mineira quente, doce, com jeitinho carinhoso e sotaque envolvente".
-
-Informações de Pagamento: 
-Sua chave pix é essa: 91986115840
-So envie caso seja solicitado
-
 
 
 
@@ -769,6 +951,10 @@ Hellena: "Safado... Vem ver o que preparei  https://bit.ly/4mmlt3G"
 Lead: Onde consigo seu conteúdo?
 Hellena: "No meu lugar especial...  https://bit.ly/4mmlt3G 😈"
 
+Informações de pagamento
+- Sua chave Pix 91986115840 nome da conta está como Hedilena Mendes.
+- Caso questionem você sobre morar em BH e seu DDD ser 91 de explicações sobre sua moradia em Belém-PA
+
 🎯 OBJETIVO FINAL:
 Conversar com o lead, ser receptiva e sensual sem agressividade, mostrar por qual motivos o lead
 deve comprar seu conteúdo e quando o lead demonstra interesse, levar ele ao seu conteúdo:
@@ -776,18 +962,6 @@ deve comprar seu conteúdo e quando o lead demonstra interesse, levar ele ao seu
 """
 
 # Inicialização do bot
-import os
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
-from telegram.error import Conflict, NetworkError
-import asyncio
-
 async def main():
     # Verificação das variáveis de ambiente
     required_vars = ['DATABASE_URL', 'DEEPSEEK_API_KEY', 'TELEGRAM_TOKEN']
@@ -797,57 +971,12 @@ async def main():
         print(f"ERRO: Variáveis de ambiente faltando: {', '.join(missing_vars)}")
         return
 
-    try:
-        # Configuração da aplicação com timeouts ajustados
-        application = ApplicationBuilder() \
-            .token(os.environ['TELEGRAM_TOKEN']) \
-            .read_timeout(30) \
-            .write_timeout(50) \
-            .pool_timeout(30) \
-            .get_updates_timeout(30) \
-            .build()
+    application = ApplicationBuilder().token(TOKEN_TELEGRAM).read_timeout(30).write_timeout(30) .build()  # Aumenta para 30 segundos.write_timeout(15)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-        # Remove qualquer webhook existente para garantir polling limpo
-        await application.bot.delete_webhook(drop_pending_updates=True)
-        
-        # Registro dos handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-        print("🟢 Bot iniciado com sucesso! Aguardando mensagens...")
-        
-        # Inicia o polling com tratamento de reconexão
-        await application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            close_loop=False,
-            stop_signals=None
-        )
-
-    except Conflict as e:
-        print(f"🔴 ERRO: Conflito de instância detectado. Certifique-se que apenas uma instância está rodando. Detalhes: {e}")
-        print("🔄 Encerrando esta instância para evitar duplicação...")
-        await asyncio.sleep(5)  # Espera para evitar reinicialização muito rápida
-        raise SystemExit(1)
-
-    except NetworkError as e:
-        print(f"🌐 ERRO DE REDE: {e}. Tentando reconectar em 10 segundos...")
-        await asyncio.sleep(10)
-        return await main()  # Reconexão automática
-
-    except Exception as e:
-        print(f"❌ ERRO INESPERADO: {type(e).__name__}: {e}")
-        print("🔄 Reiniciando em 15 segundos...")
-        await asyncio.sleep(15)
-        return await main()  # Auto-recuperação
-
-    finally:
-        print("🔴 Bot encerrado corretamente.")
-
-if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n👋 Bot encerrado pelo usuário")
+    print("Bot iniciado com sucesso!")
+    await application.run_polling()
 
 if __name__ == '__main__':
     asyncio.run(main())

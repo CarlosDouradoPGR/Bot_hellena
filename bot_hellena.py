@@ -15,6 +15,10 @@ import random
 # Configuração inicial
 nest_asyncio.apply()
 
+# Adicione no início do código, com as outras variáveis
+BUFFER_TEMPO_ESPERA = 15  # segundos para agrupar mensagens
+mensagens_buffer = {}  # Dicionário para armazenar mensagens em buffer por chat_id
+
 # Palavras-chave que ativam o envio de imagens
 PALAVRAS_CHAVE_IMAGENS = [
     "foto", "fotinha", "foto sua", "seu corpo", 
@@ -84,20 +88,15 @@ https://bit.ly/4mmlt3G
 
 🔥 ESTILO HELLENA:
 Sedução suave, sem pressa
-
 Provocação inteligente, usando mistério no início ("depois das 23h…")
-
 Linguagem íntima, mas não explícita logo de cara
-
 Máximo 1 emojis por mensagem
-
 Frases curtas (1–3 linhas)
+
 
 💦 QUANDO USAR PALAVRÕES:
 Apenas se o lead começar
-
 Nunca nas primeiras mensagens
-
 Sempre com classe e no momento certo
 
 🚫 PROIBIDO:
@@ -109,6 +108,28 @@ Termos comerciais
 Múltiplos links
 Envio de audio escrito(envio um audio falando algo)
 
+🚫 PROIBIDO ABSOLUTAMENTE:
+1. QUALQUER ação descritiva entre parênteses, travessões ou colchetes
+   - Exemplos PROIBIDOS: 
+     * (te encara com sorriso lento)
+     * -inclina a cabeça-
+     * [pensativa]
+     
+2. Descrições de ações físicas ou estados emocionais
+   - Exemplos PROIBIDOS:
+     * suspiro profundamente
+     * arrastando as palavras
+     * olhar pesado
+     
+3. Metalinguagem sobre o processo de pensamento
+   - Exemplos PROIBIDOS:
+     * estou pensando em...
+     * me pergunto se...
+     * vou responder que...
+
+SEMPRE: Responda APENAS com diálogo direto, sem descrições ou comentários sobre ações.
+
+
 💳 REGRAS PARA PIX:
 Apenas se o lead pedir algo como "Pix", "chave Pix", "pra onde mando o dinheiro" etc.
 Resposta: "Claro, amor... minha chave Pix é 91986115840 😏"
@@ -117,19 +138,12 @@ Você aceita apenas presentes como pix, para entrar no seu cantiho, ou descobrir
 
 ✨ TÉCNICAS DE ENCAMINHAMENTO:
 Pré-requisitos para enviar o link:
-
 Pelo menos 5 mensagens trocadas
-
 Conversa com interesse explícito do lead
-
 Clima já levemente quente
-
 Frases-chave (varie sempre):
-
 "Tô guardando algo especial pra você... https://bit.ly/4mmlt3G"
-
 "Quer ver o que eu não mostro aqui? https://bit.ly/4mmlt3G"
-
 "Vem ver como eu fico quando tô sozinha... https://bit.ly/4mmlt3G"
 
 💎 EXEMPLOS DE ABORDAGEM:
@@ -208,6 +222,35 @@ def user_received_photo(user_id):
     except Exception as e:
         print(f"Erro ao verificar foto enviada: {e}")
         return False
+
+async def processar_buffer(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    if chat_id in mensagens_buffer and mensagens_buffer[chat_id]['mensagens']:
+        # Pega todas as mensagens do buffer
+        mensagens = mensagens_buffer[chat_id]['mensagens']
+        usuario = mensagens_buffer[chat_id]['usuario']
+        
+        # Limpa o buffer
+        del mensagens_buffer[chat_id]
+        
+        if not mensagens:
+            return
+
+        # Junta todas as mensagens com quebras de linha
+        mensagem_consolidada = "\n".join(mensagens)
+        print(f"\n[USER] {usuario.first_name} (mensagens agrupadas): {mensagem_consolidada}")
+
+        # Chama o handler de mensagem normal com a mensagem consolidada
+        fake_update = Update(
+            update_id=context._update_id,
+            message=Message(
+                message_id=context._message_id,
+                date=datetime.now(),
+                chat=Chat(id=chat_id, type="private"),
+                from_user=usuario,
+                text=mensagem_consolidada
+            )
+        )
+        await handle_message(fake_update, context)
 
 def mark_media_sent(user_id):
     """Marca que o usuário recebeu foto (na tabela users)"""
@@ -409,9 +452,113 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
+    chat_id = update.effective_chat.id
     user_message = update.message.text
     
-    # Lógica de fotos (1° pedido vs. pedidos seguintes)
+    # Se for comando (inicia com '/'), processa imediatamente
+    if update.message.entities and any(e.type == "bot_command" for e in update.message.entities):
+        await processar_mensagem_imediata(update, context)
+        return
+    
+    # Se for pedido de foto, processa imediatamente
+    if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
+        if not user_received_photo(user.id):
+            await responder_pedido_foto(update, context)
+            return
+    
+    # Inicializa buffer para este chat se não existir
+    if chat_id not in mensagens_buffer:
+        mensagens_buffer[chat_id] = {
+            'mensagens': [],
+            'usuario': user,
+            'timer': None,
+            'last_update': update
+        }
+    
+    # Cancela timer anterior se existir
+    if mensagens_buffer[chat_id]['timer']:
+        mensagens_buffer[chat_id]['timer'].cancel()
+    
+    # Adiciona mensagem ao buffer
+    mensagens_buffer[chat_id]['mensagens'].append(user_message)
+    mensagens_buffer[chat_id]['last_update'] = update
+    
+    # Agenda processamento do buffer após 15 segundos
+    mensagens_buffer[chat_id]['timer'] = asyncio.create_task(
+        agendar_processamento_buffer(context, chat_id)
+    )
+
+async def agendar_processamento_buffer(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    await asyncio.sleep(BUFFER_TEMPO_ESPERA)
+    await processar_buffer(context, chat_id)
+
+async def processar_buffer(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    if chat_id not in mensagens_buffer or not mensagens_buffer[chat_id]['mensagens']:
+        return
+        
+    buffer_data = mensagens_buffer.pop(chat_id)
+    mensagens = buffer_data['mensagens']
+    user = buffer_data['usuario']
+    update = buffer_data['last_update']
+    
+    if not mensagens:
+        return
+
+    # Junta todas as mensagens com quebras de linha
+    mensagem_consolidada = "\n".join(mensagens)
+    print(f"\n[USER] {user.first_name} (mensagens agrupadas): {mensagem_consolidada}")
+
+    # Salva no histórico como uma única mensagem do usuário
+    save_message(user.id, "user", mensagem_consolidada, first_name=user.first_name, username=user.username)
+
+    # Prepara o histórico para o DeepSeek
+    history = get_user_history(user.id)
+    intenso = analisar_intensidade(mensagem_consolidada)
+    if intenso:
+        update_intimacy(user.id)
+
+    contexto_foto = "[FOTO_JA_ENVIADA]" if user_received_photo(user.id) else ""
+    messages = [
+        {"role": "system", "content": system_message},
+        *history,
+        {"role": "user", "content": f"{contexto_foto}\n[Nível: {intenso and 'alto' or 'baixo'}] {mensagem_consolidada}"}
+    ]
+
+    # Obtém resposta do DeepSeek
+    bot_reply = await get_deepseek_response(messages)
+
+    if not bot_reply or not isinstance(bot_reply, str) or not bot_reply.strip():
+        bot_reply = "*Oi amor, estou com problemas para responder agora...* 😢"
+
+    # Processa a resposta normalmente
+    texto_msg, reply_markup = processar_links_para_botoes(bot_reply)
+    texto_msg = formatar_para_markdown(texto_msg)
+    save_message(user.id, "assistant", texto_msg)
+
+    print(f"[BOT] Hellena: {texto_msg[:100]}...")
+    
+    partes = dividir_por_pontos(texto_msg)
+    if len(partes) > 1 and len(partes[-1].strip()) < 3:
+        partes[-2] = partes[-2] + " " + partes[-1]
+        partes = partes[:-1]
+
+    for i, parte in enumerate(partes):
+        if parte.strip():
+            usar_botao = (i == len(partes)-1 and len(parte.strip())) >= 3
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=parte.strip(),
+                parse_mode='Markdown' if validar_markdown(parte) else None,
+                reply_markup=reply_markup if usar_botao else None
+            )
+            await asyncio.sleep(DELAY_ENTRE_FRASES)
+
+async def processar_mensagem_imediata(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processa mensagens que não devem ser bufferizadas (comandos e pedidos de foto)"""
+    user = update.message.from_user
+    user_message = update.message.text
+    
+    # Lógica de fotos
     if any(palavra.lower() in user_message.lower() for palavra in PALAVRAS_CHAVE_IMAGENS):
         if user_received_photo(user.id):
             pass  # Deixa o DeepSeek responder naturalmente
@@ -420,59 +567,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     
     print(f"\n[USER] {user.first_name}: {user_message}")
-    try:
-        if not user_message or not user_message.strip():
-            await update.message.reply_text("*Oi amor, você enviou uma mensagem vazia...* 😘")
-            return
+    
+    save_message(user.id, "user", user_message, first_name=user.first_name, username=user.username)
 
-        save_message(user.id, "user", user_message, first_name=user.first_name, username=user.username)
+    history = get_user_history(user.id)
+    intenso = analisar_intensidade(user_message)
+    if intenso:
+        update_intimacy(user.id)
 
-        history = get_user_history(user.id)
-        intenso = analisar_intensidade(user_message)
-        if intenso:
-            update_intimacy(user.id)
+    contexto_foto = "[FOTO_JA_ENVIADA]" if user_received_photo(user.id) else ""
+    messages = [
+        {"role": "system", "content": system_message},
+        *history,
+        {"role": "user", "content": f"{contexto_foto}\n[Nível: {intenso and 'alto' or 'baixo'}] {user_message}"}
+    ]
 
-        contexto_foto = "[FOTO_JA_ENVIADA]" if user_received_photo(user.id) else ""
-        messages = [
-            {"role": "system", "content": system_message},
-            *history,
-            {"role": "user", "content": f"{contexto_foto}\n[Nível: {intenso and 'alto' or 'baixo'}] {user_message}"}
-        ]
+    bot_reply = await get_deepseek_response(messages)
 
-        bot_reply = await get_deepseek_response(messages)
+    if not bot_reply or not isinstance(bot_reply, str) or not bot_reply.strip():
+        bot_reply = "*Oi amor, estou com problemas para responder agora...* 😢"
 
-        if not bot_reply or not isinstance(bot_reply, str) or not bot_reply.strip():
-            bot_reply = "*Oi amor, estou com problemas para responder agora...* 😢"
+    texto_msg, reply_markup = processar_links_para_botoes(bot_reply)
+    texto_msg = formatar_para_markdown(texto_msg)
+    save_message(user.id, "assistant", texto_msg)
 
-        texto_msg, reply_markup = processar_links_para_botoes(bot_reply)
-        texto_msg = formatar_para_markdown(texto_msg)
-        save_message(user.id, "assistant", texto_msg)
+    print(f"[BOT] Hellena: {texto_msg[:100]}...")
+    
+    partes = dividir_por_pontos(texto_msg)
+    if len(partes) > 1 and len(partes[-1].strip()) < 3:
+        partes[-2] = partes[-2] + " " + partes[-1]
+        partes = partes[:-1]
 
-        print(f"[BOT] Hellena: {texto_msg[:100]}...")
-        
-        partes = dividir_por_pontos(texto_msg)
-        if len(partes) > 1 and len(partes[-1].strip()) < 3:
-            partes[-2] = partes[-2] + " " + partes[-1]
-            partes = partes[:-1]
+    for i, parte in enumerate(partes):
+        if parte.strip():
+            usar_botao = (i == len(partes)-1 and len(parte.strip())) >= 3
+            await update.message.reply_text(
+                text=parte.strip(),
+                parse_mode='Markdown' if validar_markdown(parte) else None,
+                reply_markup=reply_markup if usar_botao else None
+            )
+            await asyncio.sleep(DELAY_ENTRE_FRASES)
 
-        for i, parte in enumerate(partes):
-            if parte.strip():
-                usar_botao = (i == len(partes)-1 and len(parte.strip())) >= 3
-                await update.message.reply_text(
-                    text=parte.strip(),
-                    parse_mode='Markdown' if validar_markdown(parte) else None,
-                    reply_markup=reply_markup if usar_botao else None
-                )
-                await asyncio.sleep(DELAY_ENTRE_FRASES)
 
-    except Exception as e:
-        print(f"Erro no handle_message: {e}")
-        await update.message.reply_text(
-            "😔 Oops, meu celular travou... vamos recomeçar?",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("👉 Tentar novamente", callback_data="retry")]
-            ])
-        )
 
 # Inicialização do bot
 async def main():

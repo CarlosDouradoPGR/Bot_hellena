@@ -16,7 +16,7 @@ import random
 nest_asyncio.apply()
 
 # Adicione no início do código, com as outras variáveis
-BUFFER_TEMPO_ESPERA = 15  # segundos para agrupar mensagens
+BUFFER_TEMPO_ESPERA = 10  # segundos para agrupar mensagens
 mensagens_buffer = {}  # Dicionário para armazenar mensagens em buffer por chat_id
 
 # Palavras-chave que ativam o envio de imagens

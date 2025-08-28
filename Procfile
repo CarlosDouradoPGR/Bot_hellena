@@ -1,1 +1,1 @@
-worker: python bot_hellena.py
+worker: teste_esteira.py

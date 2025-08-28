@@ -2,6 +2,8 @@ import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import random
+from datetime import datetime
 
 # Obter a porta do Railway
 port = int(os.environ.get("PORT", 8501))
@@ -14,28 +16,102 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Título do dashboard
-st.title("📦 Kisoft - Sistema Pick by Light")
-st.markdown("### Monitoramento do braço A1 - 5 estações de trabalho")
-st.markdown("---")
+# Função para gerar dados simulados se o CSV não existir
+def gerar_dados_simulados():
+    num_rows = 3600
+    data_unica = "15/05/2023"
+    
+    estacoes = ['A1-E1', 'A1-E2', 'A1-E3', 'A1-E4', 'A1-E5']
+    operadores = ['OP001', 'OP002', 'OP003', 'OP004', 'OP005']
+    
+    skus_por_estacao = {
+        'A1-E1': [1001, 1002, 1003, 1004, 1005],
+        'A1-E2': [2001, 2002, 2003, 2004, 2005],
+        'A1-E3': [3001, 3002, 3003, 3004, 3005],
+        'A1-E4': [4001, 4002, 4003, 4004, 4005],
+        'A1-E5': [5001, 5002, 5003, 5004, 5005]
+    }
+    
+    status_options = ['CONCLUIDO', 'ERRO']
+    tipos_erro = ['SKU_INCORRETO', 'QUANTIDADE_INCORRETA', 'TEMPO_EXCEDIDO', 'NENHUM']
+    
+    dados = []
+    for i in range(num_rows):
+        estacao = random.choice(estacoes)
+        operador = operadores[estacoes.index(estacao)]
+        sku = random.choice(skus_por_estacao[estacao])
+        
+        segundos_totais = random.randint(0, 3599)
+        minutos = segundos_totais // 60
+        segundos = segundos_totais % 60
+        tempo_chegada = f"14:{minutos:02d}:{segundos:02d}"
+        
+        tempo_processamento = random.randint(5, 30)
+        
+        if random.random() < 0.05:
+            status = 'ERRO'
+            tempo_processamento = random.randint(31, 120)
+            tipo_erro = random.choice(tipos_erro[:3])
+        else:
+            status = 'CONCLUIDO'
+            tipo_erro = 'NENHUM'
+        
+        segundos_saida = segundos_totais + tempo_processamento
+        minutos_saida = segundos_saida // 60
+        segundos_saida_resto = segundos_saida % 60
+        tempo_saida = f"14:{minutos_saida:02d}:{segundos_saida_resto:02d}"
+        
+        quantidade = random.choices([1, 2, 3], weights=[0.85, 0.12, 0.03])[0]
+        prioridade = random.choices(['NORMAL', 'URGENTE'], weights=[0.8, 0.2])[0]
+        id_caixa = f"CAIXA-{random.randint(1, 500)}"
+        
+        dados.append([
+            data_unica, tempo_chegada, tempo_saida, sku, 'A1', estacao,
+            operador, quantidade, status, tipo_erro, prioridade, id_caixa, tempo_processamento
+        ])
+    
+    df = pd.DataFrame(dados, columns=[
+        'data', 'tempo_chegada', 'tempo_saida', 'sku', 'braco', 'estacao',
+        'operador', 'quantidade', 'status', 'tipo_erro', 'prioridade',
+        'id_caixa', 'tempo_processamento_segundos'
+    ])
+    
+    df['datetime_chegada'] = pd.to_datetime(df['data'] + ' ' + df['tempo_chegada'], format='%d/%m/%Y %H:%M:%S')
+    df['datetime_saida'] = pd.to_datetime(df['data'] + ' ' + df['tempo_saida'], format='%d/%m/%Y %H:%M:%S')
+    
+    # Salvar para uso futuro
+    df.to_csv('kisoft_pick_by_light.csv', index=False)
+    
+    return df
 
 # Função para carregar dados
 @st.cache_data
 def load_data():
     try:
+        # Tenta carregar do CSV
         df = pd.read_csv('kisoft_pick_by_light.csv')
+        
+        # Verifica se tem as colunas necessárias
+        colunas_necessarias = ['estacao', 'operador', 'status', 'tempo_processamento_segundos']
+        for coluna in colunas_necessarias:
+            if coluna not in df.columns:
+                raise ValueError(f"Coluna {coluna} não encontrada no CSV")
+        
         df['datetime_chegada'] = pd.to_datetime(df['data'] + ' ' + df['tempo_chegada'], format='%d/%m/%Y %H:%M:%S')
         df['datetime_saida'] = pd.to_datetime(df['data'] + ' ' + df['tempo_saida'], format='%d/%m/%Y %H:%M:%S')
         return df
-    except:
-        st.error("❌ Arquivo de dados não encontrado. Execute generate_data.py primeiro.")
-        return pd.DataFrame()
+        
+    except (FileNotFoundError, ValueError, KeyError) as e:
+        st.warning(f"⚠️ {e}. Gerando dados simulados...")
+        return gerar_dados_simulados()
+
+# Título do dashboard
+st.title("📦 Kisoft - Sistema Pick by Light")
+st.markdown("### Monitoramento do braço A1 - 5 estações de trabalho")
+st.markdown("---")
 
 # Carregar dados
 df = load_data()
-
-if df.empty:
-    st.stop()
 
 # Sidebar com filtros
 st.sidebar.header("🔧 Filtros")
@@ -149,7 +225,7 @@ with col2:
 
 # Tabela de dados
 st.markdown("### 📋 Dados Detalhados")
-st.dataframe(df_filtrado, use_container_width=True, height=300)
+st.dataframe(df_filtrado.head(20), use_container_width=True, height=300)
 
 # Download
 csv = df_filtrado.to_csv(index=False)
@@ -160,7 +236,7 @@ st.download_button(
     mime="text/csv"
 )
 
-# ⚠️ IMPORTANTE: Adicione estas linhas no final do arquivo
+# ⚠️ IMPORTANTE: Para Railway
 if __name__ == "__main__":
     import streamlit.web.cli as stcli
     import sys

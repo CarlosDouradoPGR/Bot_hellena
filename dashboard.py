@@ -1,12 +1,7 @@
-import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import random
-import sys
-
-# OBTER PORTA DO RAILWAY - FORMA CORRETA
-port = int(os.environ.get("PORT", 8501))
 
 # Configuração da página
 st.set_page_config(
@@ -18,7 +13,7 @@ st.set_page_config(
 
 # Função para gerar dados simulados
 def gerar_dados_simulados():
-    num_rows = 500  # Reduzido para performance
+    num_rows = 500
     data_unica = "15/05/2023"
     
     estacoes = ['A1-E1', 'A1-E2', 'A1-E3', 'A1-E4', 'A1-E5']
@@ -178,15 +173,4 @@ else:
 st.markdown("---")
 st.caption("Dashboard Kisoft Pick by Light - Sistema de monitoramento")
 
-# ⚠️ IMPORTANTE: Configuração para Railway
-if __name__ == "__main__":
-    # Configurar manualmente as opções do Streamlit
-    from streamlit import config as _config
-    
-    # Usar a porta do Railway
-    _config.set_option("server.port", port)
-    _config.set_option("server.address", "0.0.0.0")
-    
-    # Executar o Streamlit
-    from streamlit.web import cli as stcli
-    stcli.main()
+# ⚠️ NÃO ADICIONE NADA DEPOIS DESTA LINHA!

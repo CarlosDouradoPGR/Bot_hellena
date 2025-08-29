@@ -4,14 +4,62 @@ import plotly.express as px
 import random
 
 # ==============================
-# Configuração da página
+# CONFIGURAÇÃO DE AUTENTICAÇÃO
 # ==============================
+USER_CREDENTIALS = {
+    "TPCcas": "87654321"
+}
+
+def check_authentication():
+    """Verifica se o usuário está autenticado"""
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    return st.session_state.authenticated
+
+def login_form():
+    """Exibe o formulário de login"""
+    st.title("🔐 Sistema Kisoft - Autenticação")
+    st.markdown("---")
+    
+    with st.form("login_form"):
+        username = st.text_input("👤 Usuário")
+        password = st.text_input("🔒 Senha", type="password")
+        submit_button = st.form_submit_button("Entrar")
+        
+        if submit_button:
+            if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+                st.session_state.authenticated = True
+                st.success("✅ Login realizado com sucesso!")
+                st.rerun()
+            else:
+                st.error("❌ Usuário ou senha incorretos")
+
+# ==============================
+# VERIFICAÇÃO DE AUTENTICAÇÃO
+# ==============================
+if not check_authentication():
+    login_form()
+    st.stop()
+
+# ==============================
+# FUNCIONALIDADES DO DASHBOARD
+# ==============================
+# Configuração da página
 st.set_page_config(
     page_title="Kisoft - Pick by Light Dashboard",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Botão de logout na sidebar
+with st.sidebar:
+    st.markdown("---")
+    if st.button("🚪 Sair"):
+        st.session_state.authenticated = False
+        st.rerun()
+    st.markdown(f"**Usuário:** TPCcas")
+    st.markdown("---")
 
 # ==============================
 # Função para gerar dados simulados
@@ -262,4 +310,3 @@ else:
 # ==============================
 st.markdown("---")
 st.caption("Dashboard Kisoft Pick by Light - Sistema de monitoramento")
-# ⚠️ NÃO ADICIONE NADA DEPOIS DESTA LINHA!

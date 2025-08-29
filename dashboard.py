@@ -1,22 +1,128 @@
-    # Filtros adicionais
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import random
+
+# ==============================
+# Configuração da página
+# ==============================
+st.set_page_config(
+    page_title="Kisoft - Pick by Light Dashboard",
+    page_icon="📦",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ==============================
+# Função para gerar dados simulados
+# ==============================
+def gerar_dados_simulados():
+    num_rows = 500
+    data_unica = "15/05/2023"
+
+    estacoes = ['A1-E1', 'A1-E2', 'A1-E3', 'A1-E4', 'A1-E5']
+    operadores = ['OP001', 'OP002', 'OP003', 'OP004', 'OP005']
+
+    skus_por_estacao = {
+        'A1-E1': [1001, 1002, 1003, 1004, 1005],
+        'A1-E2': [2001, 2002, 2003, 2004, 2005],
+        'A1-E3': [3001, 3002, 3003, 3004, 3005],
+        'A1-E4': [4001, 4002, 4003, 4004, 4005],
+        'A1-E5': [5001, 5002, 5003, 5004, 5005]
+    }
+
+    dados = []
+    for i in range(num_rows):
+        estacao = random.choice(estacoes)
+        operador = operadores[estacoes.index(estacao)]
+        sku = random.choice(skus_por_estacao[estacao])
+
+        # Tempo de chegada
+        segundos_totais = random.randint(0, 3599)
+        minutos = segundos_totais // 60
+        segundos = segundos_totais % 60
+        tempo_chegada = f"14:{minutos:02d}:{segundos:02d}"
+
+        # Processamento
+        tempo_processamento = random.randint(5, 30)
+
+        # Saída
+        segundos_saida = segundos_totais + tempo_processamento
+        minutos_saida = min(59, segundos_saida // 60)
+        segundos_saida_resto = min(59, segundos_saida % 60)
+        tempo_saida = f"14:{minutos_saida:02d}:{segundos_saida_resto:02d}"
+
+        quantidade = random.choices([1, 2, 3], weights=[0.85, 0.12, 0.03])[0]
+        status = random.choices(['CONCLUIDO', 'ERRO'], weights=[0.95, 0.05])[0]
+        prioridade = random.choices(['NORMAL', 'URGENTE'], weights=[0.8, 0.2])[0]
+
+        dados.append([
+            data_unica, tempo_chegada, tempo_saida, sku, 'A1', estacao,
+            operador, quantidade, status, prioridade, tempo_processamento
+        ])
+
+    df = pd.DataFrame(dados, columns=[
+        'data', 'tempo_chegada', 'tempo_saida', 'sku', 'braco', 'estacao',
+        'operador', 'quantidade', 'status', 'prioridade', 'tempo_processamento_segundos'
+    ])
+    return df
+
+# ==============================
+# Carregar dados
+# ==============================
+def load_data():
+    try:
+        return gerar_dados_simulados()
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
+        return pd.DataFrame()
+
+# ==============================
+# Título do dashboard
+# ==============================
+st.title("📦 Kisoft - Sistema Pick by Light")
+st.markdown("### Monitoramento do braço A1 - 5 estações de trabalho")
+st.markdown("---")
+
+df = load_data()
+
+if not df.empty:
+
+    # ==============================
+    # Filtros na Sidebar
+    # ==============================
+    st.sidebar.header("🔧 Filtros")
+
+    estacao_selecionada = st.sidebar.multiselect(
+        "Estação:",
+        options=df['estacao'].unique(),
+        default=df['estacao'].unique()
+    )
+
+    operador_selecionado = st.sidebar.multiselect(
+        "Operador:",
+        options=df['operador'].unique(),
+        default=df['operador'].unique()
+    )
+
     sku_selecionado = st.sidebar.multiselect(
         "SKU:",
         options=df['sku'].unique(),
         default=df['sku'].unique()
     )
-    
+
     status_selecionado = st.sidebar.multiselect(
         "Status:",
         options=df['status'].unique(),
         default=df['status'].unique()
     )
-    
+
     prioridade_selecionada = st.sidebar.multiselect(
         "Prioridade:",
         options=df['prioridade'].unique(),
         default=df['prioridade'].unique()
     )
-    
+
     tempo_range = st.sidebar.slider(
         "Tempo de Processamento (s):",
         int(df['tempo_processamento_segundos'].min()),
@@ -24,25 +130,54 @@
         (int(df['tempo_processamento_segundos'].min()), int(df['tempo_processamento_segundos'].max()))
     )
 
-    # Reaplicar filtros
-    df_filtrado = df_filtrado[
-        (df_filtrado['sku'].isin(sku_selecionado)) &
-        (df_filtrado['status'].isin(status_selecionado)) &
-        (df_filtrado['prioridade'].isin(prioridade_selecionada)) &
-        (df_filtrado['tempo_processamento_segundos'].between(tempo_range[0], tempo_range[1]))
+    # Aplicar filtros
+    df_filtrado = df[
+        (df['estacao'].isin(estacao_selecionada)) &
+        (df['operador'].isin(operador_selecionado)) &
+        (df['sku'].isin(sku_selecionado)) &
+        (df['status'].isin(status_selecionado)) &
+        (df['prioridade'].isin(prioridade_selecionada)) &
+        (df['tempo_processamento_segundos'].between(tempo_range[0], tempo_range[1]))
     ].copy()
 
-    # Abas
+    # ==============================
+    # KPIs principais
+    # ==============================
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("📦 Total de Itens", len(df_filtrado))
+
+    with col2:
+        concluidos = len(df_filtrado[df_filtrado['status'] == 'CONCLUIDO'])
+        eficiencia = (concluidos / len(df_filtrado)) * 100 if len(df_filtrado) > 0 else 0
+        st.metric("✅ Eficiência", f"{eficiencia:.1f}%")
+
+    with col3:
+        tempo_medio = df_filtrado['tempo_processamento_segundos'].mean() if len(df_filtrado) > 0 else 0
+        st.metric("⏱️ Tempo Médio (s)", f"{tempo_medio:.1f}")
+
+    with col4:
+        itens_por_minuto = len(df_filtrado) / 60
+        st.metric("🚀 Itens por Minuto", f"{itens_por_minuto:.1f}")
+
+    st.markdown("---")
+
+    # ==============================
+    # Abas de Navegação
+    # ==============================
     tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "🏭 Estações", "⚠️ Erros & Prioridades"])
 
+    # ------------------------------
+    # Aba 1 - Visão Geral
+    # ------------------------------
     with tab1:
         col1, col2 = st.columns(2)
-        
+
         with col1:
-            # Pizza de status
             fig = px.pie(
-                df_filtrado, 
-                names='status', 
+                df_filtrado,
+                names='status',
                 title="Proporção de Status",
                 hole=0.4,
                 color='status',
@@ -51,44 +186,80 @@
             st.plotly_chart(fig, use_container_width=True)
 
         with col2:
-            # Evolução temporal
             df_time = df_filtrado.groupby('tempo_chegada').size().reset_index(name='count')
             fig = px.line(
-                df_time, x='tempo_chegada', y='count',
-                title="Processamentos ao Longo do Tempo"
+                df_time,
+                x='tempo_chegada', y='count',
+                title="Evolução dos Processamentos ao Longo do Tempo"
             )
             st.plotly_chart(fig, use_container_width=True)
 
+    # ------------------------------
+    # Aba 2 - Estações
+    # ------------------------------
     with tab2:
         col1, col2 = st.columns(2)
 
         with col1:
-            # Boxplot de tempos
-            fig = px.box(
-                df_filtrado,
+            performance = df_filtrado.groupby('estacao').agg({
+                'tempo_processamento_segundos': 'mean'
+            }).reset_index()
+            fig = px.bar(
+                performance,
                 x='estacao', y='tempo_processamento_segundos',
-                title="Distribuição de Tempos por Estação"
+                title='⏱️ Tempo Médio por Estação',
+                labels={'tempo_processamento_segundos': 'Tempo (s)'}
             )
             st.plotly_chart(fig, use_container_width=True)
 
         with col2:
-            # Heatmap Operador x Estação
-            heatmap_data = df_filtrado.groupby(['operador', 'estacao']).size().reset_index(name='count')
-            fig = px.density_heatmap(
-                heatmap_data,
-                x='estacao', y='operador', z='count',
-                title="Volume por Operador x Estação",
-                color_continuous_scale="Blues"
+            fig = px.box(
+                df_filtrado,
+                x='estacao', y='tempo_processamento_segundos',
+                title="Distribuição dos Tempos por Estação"
             )
             st.plotly_chart(fig, use_container_width=True)
 
+        st.markdown("#### 🔥 Heatmap Operador x Estação")
+        heatmap_data = df_filtrado.groupby(['operador', 'estacao']).size().reset_index(name='count')
+        fig = px.density_heatmap(
+            heatmap_data,
+            x='estacao', y='operador', z='count',
+            title="Volume por Operador x Estação",
+            color_continuous_scale="Blues"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ------------------------------
+    # Aba 3 - Erros e Prioridades
+    # ------------------------------
     with tab3:
-        # Itens urgentes e erros
         urgentes = df_filtrado[df_filtrado['prioridade'] == 'URGENTE']
         erros = df_filtrado[df_filtrado['status'] == 'ERRO']
 
-        st.subheader("🚨 Itens Urgentes")
-        st.dataframe(urgentes.head(10), use_container_width=True, height=200)
+        col1, col2 = st.columns(2)
 
-        st.subheader("❌ Erros")
-        st.dataframe(erros.head(10), use_container_width=True, height=200)
+        with col1:
+            st.subheader("🚨 Itens Urgentes")
+            st.dataframe(urgentes.head(15), use_container_width=True, height=300)
+
+        with col2:
+            st.subheader("❌ Erros")
+            st.dataframe(erros.head(15), use_container_width=True, height=300)
+
+    # ==============================
+    # Dados em Tabela
+    # ==============================
+    st.markdown("---")
+    st.markdown("### 📋 Últimos 20 Registros")
+    st.dataframe(df_filtrado.head(20), use_container_width=True, height=300)
+
+else:
+    st.error("❌ Não foi possível carregar os dados.")
+
+# ==============================
+# Rodapé
+# ==============================
+st.markdown("---")
+st.caption("Dashboard Kisoft Pick by Light - Sistema de monitoramento")
+# ⚠️ NÃO ADICIONE NADA DEPOIS DESTA LINHA!

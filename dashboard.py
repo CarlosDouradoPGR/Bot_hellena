@@ -7,7 +7,7 @@ import random
 # CONFIGURAÇÃO DE AUTENTICAÇÃO
 # ==============================
 USER_CREDENTIALS = {
-    "TPCcas": "87654321"
+    "Carlos": "87654321"
 }
 
 def check_authentication():

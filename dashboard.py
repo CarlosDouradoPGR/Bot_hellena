@@ -58,12 +58,13 @@ def gerar_dados_simulados():
 
         dados.append([
             data_unica, tempo_chegada, tempo_saida, sku, 'A1', estacao,
-            operador, quantidade, status, prioridade, tempo_processamento
+            operador, quantidade, status, prioridade, tempo_processamento, minutos
         ])
 
     df = pd.DataFrame(dados, columns=[
         'data', 'tempo_chegada', 'tempo_saida', 'sku', 'braco', 'estacao',
-        'operador', 'quantidade', 'status', 'prioridade', 'tempo_processamento_segundos'
+        'operador', 'quantidade', 'status', 'prioridade',
+        'tempo_processamento_segundos', 'minuto'
     ])
     return df
 
@@ -158,15 +159,15 @@ if not df.empty:
         st.metric("⏱️ Tempo Médio (s)", f"{tempo_medio:.1f}")
 
     with col4:
-        itens_por_minuto = len(df_filtrado) / 60
-        st.metric("🚀 Itens por Minuto", f"{itens_por_minuto:.1f}")
+        itens_por_minuto = len(df_filtrado) / (df_filtrado['minuto'].max()+1 if len(df_filtrado) > 0 else 1)
+        st.metric("🚀 Itens por Minuto", f"{itens_por_minuto:.2f}")
 
     st.markdown("---")
 
     # ==============================
     # Abas de Navegação
     # ==============================
-    tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "🏭 Estações", "⚠️ Erros & Prioridades"])
+    tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "🏭 Estações", "⚠️ Alertas"])
 
     # ------------------------------
     # Aba 1 - Visão Geral
@@ -175,23 +176,24 @@ if not df.empty:
         col1, col2 = st.columns(2)
 
         with col1:
-            fig = px.pie(
-                df_filtrado,
-                names='status',
-                title="Proporção de Status",
-                hole=0.4,
-                color='status',
-                color_discrete_map={'CONCLUIDO': 'green', 'ERRO': 'red'}
+            # Evolução por minuto
+            df_min = df_filtrado.groupby(['minuto']).size().reset_index(name='qtd')
+            fig = px.line(
+                df_min, x='minuto', y='qtd',
+                markers=True,
+                title="Evolução de Processos ao Longo do Tempo (minuto a minuto)"
             )
             st.plotly_chart(fig, use_container_width=True)
 
         with col2:
-            df_time = df_filtrado.groupby('tempo_chegada').size().reset_index(name='count')
-            fig = px.line(
-                df_time,
-                x='tempo_chegada', y='count',
-                title="Evolução dos Processamentos ao Longo do Tempo"
-            )
+            # Média de itens/minuto e meta
+            itens_minuto = df_filtrado.groupby('minuto').size().reset_index(name='qtd')
+            media = itens_minuto['qtd'].mean() if len(itens_minuto) > 0 else 0
+            meta = media * 0.95
+
+            fig = px.bar(itens_minuto, x='minuto', y='qtd', title="Itens/Minuto vs Meta")
+            fig.add_hline(y=media, line_dash="dot", line_color="blue", annotation_text="Média", annotation_position="top left")
+            fig.add_hline(y=meta, line_dash="dash", line_color="red", annotation_text="Meta (-5%)", annotation_position="bottom left")
             st.plotly_chart(fig, use_container_width=True)
 
     # ------------------------------
@@ -231,21 +233,19 @@ if not df.empty:
         st.plotly_chart(fig, use_container_width=True)
 
     # ------------------------------
-    # Aba 3 - Erros e Prioridades
+    # Aba 3 - Alertas
     # ------------------------------
     with tab3:
         urgentes = df_filtrado[df_filtrado['prioridade'] == 'URGENTE']
-        erros = df_filtrado[df_filtrado['status'] == 'ERRO']
 
-        col1, col2 = st.columns(2)
+        st.subheader("🚨 Itens Urgentes")
+        st.dataframe(urgentes.head(15), use_container_width=True, height=300)
 
-        with col1:
-            st.subheader("🚨 Itens Urgentes")
-            st.dataframe(urgentes.head(15), use_container_width=True, height=300)
-
-        with col2:
-            st.subheader("❌ Erros")
-            st.dataframe(erros.head(15), use_container_width=True, height=300)
+        # Alerta de eficiência
+        if eficiencia < 95:  # exemplo de meta de eficiência
+            st.error(f"⚠️ Eficiência abaixo da meta: {eficiencia:.1f}%")
+        else:
+            st.success(f"✅ Eficiência dentro da meta: {eficiencia:.1f}%")
 
     # ==============================
     # Dados em Tabela

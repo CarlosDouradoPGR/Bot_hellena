@@ -130,7 +130,7 @@ def load_data():
 # Título do dashboard
 # ==============================
 st.title("📦 Kisoft - Sistema Pick by Light")
-st.markdown("### Monitoramento do braço A1 - 5 estações de trabalho")
+st.markdown("### Monitoramento do braço A1")
 st.markdown("---")
 
 df = load_data()
